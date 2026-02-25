@@ -5,12 +5,13 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://leadsgulshanravi.com.pk"),
   title: "Lahore Leads University | Gulshan Ravi Campus",
   description: "Administrative Tools and Student Portal for Lahore Leads University, Gulshan Ravi Campus.",
   openGraph: {
     title: "Lahore Leads University | Gulshan Ravi Campus",
     description: "Administrative Tools and Student Portal",
-    url: "https://www.leadsgulshanravi.com.pk",
+    url: "https://leadsgulshanravi.com.pk",
     siteName: "Lahore Leads University",
     images: [
       {
