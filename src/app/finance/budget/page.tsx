@@ -1,12 +1,77 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { PiggyBank, Plus, Loader2, X, Check, TrendingUp } from 'lucide-react';
+import { PiggyBank, Plus, Loader2, X, Check, Search } from 'lucide-react';
 
 interface FY { _id: string; name: string; }
+interface COA { _id: string; accountCode: string; accountName: string; accountType: string; isControl: boolean; }
 interface BudgetLine { accountCode: string; accountName: string; budgetedAmount: number; }
 interface Budget { _id: string; fiscalYear: { name: string }; budgetName: string; totalBudget: number; status: string; budgetLines: BudgetLine[]; allowOverspend: boolean; createdAt: string; }
+
+// --- Searchable Account Picker ---
+function AccountPicker({ value, onChange }: {
+    value: { accountCode: string; accountName: string };
+    onChange: (code: string, name: string) => void;
+}) {
+    const [accounts, setAccounts] = useState<COA[]>([]);
+    const [query, setQuery] = useState('');
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        fetch('/api/finance/chart-of-accounts')
+            .then(r => r.json())
+            .then(d => setAccounts(Array.isArray(d) ? d.filter((a: COA) => !a.isControl) : []));
+    }, []);
+
+    // Close on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const filtered = accounts.filter(a =>
+        query.length < 1 || a.accountName.toLowerCase().includes(query.toLowerCase()) || a.accountCode.includes(query)
+    ).slice(0, 40);
+
+    const select = (a: COA) => { onChange(a.accountCode, a.accountName); setQuery(''); setOpen(false); };
+
+    return (
+        <div ref={ref} className="relative w-full">
+            <button type="button" onClick={() => setOpen(o => !o)}
+                className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-leads-blue text-left">
+                {value.accountName
+                    ? <span className="truncate text-gray-800">{value.accountName}</span>
+                    : <span className="text-gray-400">Select account…</span>}
+                <Search size={11} className="text-gray-400 shrink-0 ml-1" />
+            </button>
+            {open && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+                    <div className="p-2 border-b border-gray-100">
+                        <input autoFocus
+                            value={query} onChange={e => setQuery(e.target.value)}
+                            className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-leads-blue"
+                            placeholder="Search by name or code…" />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                        {filtered.length === 0
+                            ? <p className="py-4 text-center text-xs text-gray-400">No accounts found</p>
+                            : filtered.map(a => (
+                                <button key={a._id} type="button" onClick={() => select(a)}
+                                    className="w-full text-left flex gap-3 items-center px-3 py-2 hover:bg-blue-50 transition-colors">
+                                    <span className="font-mono text-[10px] text-leads-blue font-bold shrink-0">{a.accountCode}</span>
+                                    <span className="text-xs text-gray-700 truncate">{a.accountName}</span>
+                                    <span className="ml-auto text-[9px] text-gray-400 shrink-0">{a.accountType}</span>
+                                </button>
+                            ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default function BudgetPage() {
     const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -35,9 +100,14 @@ export default function BudgetPage() {
 
     const addLine = () => setForm({ ...form, budgetLines: [...form.budgetLines, { accountCode: '', accountName: '', budgetedAmount: 0 }] });
     const removeLine = (i: number) => setForm({ ...form, budgetLines: form.budgetLines.filter((_, idx) => idx !== i) });
-    const updateLine = (i: number, field: string, val: string | number) => {
+    const updateLineAccount = (i: number, code: string, name: string) => {
         const bl = [...form.budgetLines];
-        bl[i] = { ...bl[i], [field]: val };
+        bl[i] = { ...bl[i], accountCode: code, accountName: name };
+        setForm({ ...form, budgetLines: bl });
+    };
+    const updateLineAmount = (i: number, val: number) => {
+        const bl = [...form.budgetLines];
+        bl[i] = { ...bl[i], budgetedAmount: val };
         setForm({ ...form, budgetLines: bl });
     };
 
@@ -136,7 +206,7 @@ export default function BudgetPage() {
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto">
                     <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl my-4">
+                        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4">
                         <div className="flex justify-between items-center p-5 border-b border-gray-100">
                             <h2 className="font-bold text-leads-blue">Create Budget</h2>
                             <button onClick={() => setShowModal(false)}><X size={18} className="text-gray-400" /></button>
@@ -160,61 +230,55 @@ export default function BudgetPage() {
                             </div>
                             <div className="flex items-center gap-2">
                                 <input type="checkbox" id="allowOverspend" checked={form.allowOverspend} onChange={e => setForm({ ...form, allowOverspend: e.target.checked })} className="w-4 h-4" />
-                                <label htmlFor="allowOverspend" className="text-xs text-gray-600">Allow overspend (warn but don't block)</label>
+                                <label htmlFor="allowOverspend" className="text-xs text-gray-600">Allow overspend (warn but don&apos;t block)</label>
                             </div>
+
                             {/* Budget Lines */}
                             <div>
                                 <div className="flex items-center justify-between mb-2">
                                     <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Budget Lines</label>
                                     <button type="button" onClick={addLine} className="text-xs text-leads-blue hover:underline flex items-center gap-1"><Plus size={12} /> Add Line</button>
                                 </div>
-                                <div className="border border-gray-200 rounded-xl overflow-hidden">
-                                    <table className="w-full text-xs">
-                                        <thead className="bg-gray-50 border-b border-gray-100">
-                                            <tr>
-                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">A/c Code</th>
-                                                <th className="px-3 py-2 text-left font-semibold text-gray-600">Account Name</th>
-                                                <th className="px-3 py-2 text-right font-semibold text-gray-600">Budget (PKR)</th>
-                                                <th className="w-8" />
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50">
-                                            {form.budgetLines.map((l, i) => (
-                                                <tr key={i}>
-                                                    <td className="px-2 py-1.5">
-                                                        <input value={l.accountCode} onChange={e => updateLine(i, 'accountCode', e.target.value)}
-                                                            className="w-full font-mono border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-leads-blue rounded px-1 text-xs"
-                                                            placeholder="e.g. 6001" />
-                                                    </td>
-                                                    <td className="px-2 py-1.5">
-                                                        <input value={l.accountName} onChange={e => updateLine(i, 'accountName', e.target.value)}
-                                                            className="w-full border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-leads-blue rounded px-1 text-xs"
-                                                            placeholder="Account name" />
-                                                    </td>
-                                                    <td className="px-2 py-1.5">
-                                                        <input type="number" step="1" min="0" value={l.budgetedAmount || ''}
-                                                            onChange={e => updateLine(i, 'budgetedAmount', parseFloat(e.target.value) || 0)}
-                                                            className="w-full text-right border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-leads-blue rounded px-1 text-xs"
-                                                            placeholder="0" />
-                                                    </td>
-                                                    <td className="px-1 py-1.5 text-center">
-                                                        {form.budgetLines.length > 1 && (
-                                                            <button type="button" onClick={() => removeLine(i)} className="text-red-400 hover:text-red-600"><X size={12} /></button>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                        <tfoot className="bg-gray-50 border-t-2 border-gray-200">
-                                            <tr>
-                                                <td colSpan={2} className="px-3 py-2 font-bold text-gray-700 text-xs">Total Budget</td>
-                                                <td className="px-3 py-2 text-right font-bold font-mono text-xs text-leads-blue">PKR {totalBudget.toLocaleString('en-PK')}</td>
-                                                <td />
-                                            </tr>
-                                        </tfoot>
-                                    </table>
+                                <div className="space-y-2">
+                                    {form.budgetLines.map((l, i) => (
+                                        <div key={i} className="grid grid-cols-[2fr_1fr_auto] gap-2 items-center bg-gray-50 rounded-xl px-3 py-2.5">
+                                            {/* Column 1: Account selector + auto-filled code badge */}
+                                            <div className="min-w-0">
+                                                <AccountPicker
+                                                    value={{ accountCode: l.accountCode, accountName: l.accountName }}
+                                                    onChange={(code, name) => updateLineAccount(i, code, name)}
+                                                />
+                                                {l.accountCode && (
+                                                    <p className="text-[10px] font-mono text-leads-blue mt-0.5 px-1">
+                                                        Code: <span className="font-bold">{l.accountCode}</span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                            {/* Column 2: Budget amount */}
+                                            <input
+                                                type="number" step="1" min="0"
+                                                value={l.budgetedAmount || ''}
+                                                onChange={e => updateLineAmount(i, parseFloat(e.target.value) || 0)}
+                                                className="w-full text-right border border-gray-200 bg-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-leads-blue"
+                                                placeholder="PKR 0" />
+                                            {/* Column 3: Remove */}
+                                            <div className="w-6 flex items-center justify-center">
+                                                {form.budgetLines.length > 1 && (
+                                                    <button type="button" onClick={() => removeLine(i)} className="text-red-400 hover:text-red-600">
+                                                        <X size={13} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                {/* Total row */}
+                                <div className="mt-2 flex items-center justify-between bg-blue-50 rounded-xl px-4 py-2.5">
+                                    <span className="text-xs font-bold text-gray-700">Total Budget</span>
+                                    <span className="text-sm font-bold font-mono text-leads-blue">PKR {totalBudget.toLocaleString('en-PK')}</span>
                                 </div>
                             </div>
+
                             {error && <p className="text-red-600 text-xs bg-red-50 rounded px-3 py-2">{error}</p>}
                             <div className="flex gap-3 pt-1">
                                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 border border-gray-200 rounded-lg py-2 text-sm">Cancel</button>
