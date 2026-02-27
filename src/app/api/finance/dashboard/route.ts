@@ -3,23 +3,36 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import FeeInvoice from '@/models/finance/FeeInvoice';
 import VendorInvoice from '@/models/finance/VendorInvoice';
-import JournalEntry from '@/models/finance/JournalEntry';
+import Wallet from '@/models/finance/Wallet';
+import Transaction from '@/models/finance/Transaction';
 import Employee from '@/models/finance/Employee';
 
-// GET /api/finance/dashboard — Real-time summary for the Finance dashboard
+/**
+ * GET /api/finance/dashboard — Real-time Khatta Engine summary
+ *
+ * KPIs returned:
+ *   - Total wallet balances (by type: BANK, CASH, INVESTMENT)
+ *   - Total outstanding student fees
+ *   - Overdue invoice count
+ *   - Income vs Expense this month (from Transactions)
+ *   - Vendor payables outstanding
+ *   - Active employee count
+ */
 export async function GET() {
     try {
         await dbConnect();
 
         const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
         const [
             totalOutstandingFees,
             overdueCount,
-            totalPaymentsThisMonth,
-            pendingJournalEntries,
+            incomeThisMonth,
+            expenseThisMonth,
             vendorPayablesOutstanding,
             activeEmployeeCount,
+            wallets,
         ] = await Promise.all([
             // Total outstanding student fees
             FeeInvoice.aggregate([
@@ -30,23 +43,17 @@ export async function GET() {
             // Overdue invoice count
             FeeInvoice.countDocuments({ status: 'OVERDUE' }),
 
-            // Payments received this month
-            JournalEntry.aggregate([
-                {
-                    $match: {
-                        status: 'POSTED',
-                        source: 'FEE_PAYMENT',
-                        entryDate: {
-                            $gte: new Date(now.getFullYear(), now.getMonth(), 1),
-                            $lte: now,
-                        },
-                    }
-                },
-                { $group: { _id: null, total: { $sum: '$totalDebit' } } },
+            // Money IN this month
+            Transaction.aggregate([
+                { $match: { type: 'IN', date: { $gte: monthStart, $lte: now } } },
+                { $group: { _id: null, total: { $sum: '$amount' } } },
             ]),
 
-            // Journal entries pending approval
-            JournalEntry.countDocuments({ status: 'PENDING_APPROVAL' }),
+            // Money OUT this month
+            Transaction.aggregate([
+                { $match: { type: 'OUT', date: { $gte: monthStart, $lte: now } } },
+                { $group: { _id: null, total: { $sum: '$amount' } } },
+            ]),
 
             // Vendor payables outstanding
             VendorInvoice.aggregate([
@@ -56,13 +63,18 @@ export async function GET() {
 
             // Active employees
             Employee.countDocuments({ status: 'ACTIVE' }),
+
+            // All active wallets with balances
+            Wallet.find({ isActive: true }).select('name type currentBalance currency').lean(),
         ]);
 
-        // Recent journal entries
-        const recentJournalEntries = await JournalEntry.find({ status: 'POSTED' })
-            .sort({ postedAt: -1 })
+        // Recent transactions
+        const recentTransactions = await Transaction.find()
+            .sort({ date: -1 })
             .limit(5)
-            .select('entryNumber entryDate description totalDebit source postedAt')
+            .populate('categoryId', 'name type')
+            .populate('walletId', 'name type')
+            .select('amount type date notes referenceType')
             .lean();
 
         // Aging buckets for student fees
@@ -94,16 +106,25 @@ export async function GET() {
             }
         ]);
 
+        // Wallet summary grouped by type
+        const walletSummary = wallets.reduce((acc: Record<string, number>, w) => {
+            acc[w.type] = (acc[w.type] || 0) + w.currentBalance;
+            return acc;
+        }, {});
+
         return NextResponse.json({
             kpis: {
                 totalOutstandingFees: totalOutstandingFees[0]?.total || 0,
                 overdueInvoicesCount: overdueCount,
-                paymentsThisMonth: totalPaymentsThisMonth[0]?.total || 0,
-                pendingJEApprovals: pendingJournalEntries,
+                incomeThisMonth: incomeThisMonth[0]?.total || 0,
+                expenseThisMonth: expenseThisMonth[0]?.total || 0,
+                netCashFlowThisMonth: (incomeThisMonth[0]?.total || 0) - (expenseThisMonth[0]?.total || 0),
                 vendorPayablesOutstanding: vendorPayablesOutstanding[0]?.total || 0,
                 activeEmployees: activeEmployeeCount,
             },
-            recentJournalEntries,
+            wallets,
+            walletSummary,
+            recentTransactions,
             agingBuckets,
             generatedAt: now.toISOString(),
         });

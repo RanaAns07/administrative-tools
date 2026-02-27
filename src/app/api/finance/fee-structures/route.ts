@@ -5,21 +5,39 @@ import dbConnect from '@/lib/mongodb';
 import FeeStructure from '@/models/finance/FeeStructure';
 import { writeAuditLog } from '@/lib/finance-utils';
 
+/**
+ * GET /api/finance/fee-structures
+ * List active fee structures.
+ * Query params: batchId, semesterNumber
+ */
 export async function GET(req: Request) {
     try {
         await dbConnect();
         const { searchParams } = new URL(req.url);
-        const program = searchParams.get('program');
+        const batchId = searchParams.get('batchId');
+        const semesterNumber = searchParams.get('semesterNumber');
         const query: Record<string, unknown> = { isActive: true };
-        if (program) query.programName = new RegExp(program, 'i');
+        if (batchId) query.batchId = batchId;
+        if (semesterNumber) query.semesterNumber = parseInt(semesterNumber, 10);
 
-        const structures = await FeeStructure.find(query).sort({ createdAt: -1 }).lean();
+        const structures = await FeeStructure.find(query)
+            .populate({ path: 'batchId', select: 'year season programId', populate: { path: 'programId', select: 'name code' } })
+            .sort({ createdAt: -1 })
+            .lean();
+
         return NextResponse.json(structures);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
 
+/**
+ * POST /api/finance/fee-structures
+ * Create a new fee structure for a batch/semester.
+ *
+ * Body: { batchId, semesterNumber, feeHeads: [{name, amount, isOptional?}], lateFeePerDay?, gracePeriodDays? }
+ * totalAmount is auto-computed by the FeeStructure pre-save hook.
+ */
 export async function POST(req: Request) {
     try {
         const session = await getServerSession();
@@ -27,28 +45,41 @@ export async function POST(req: Request) {
 
         await dbConnect();
         const body = await req.json();
-        const { programName, semester, academicYear, feeComponents, lateFeePerDay, gracePeriodDays } = body;
+        const { batchId, semesterNumber, feeHeads, lateFeePerDay, gracePeriodDays } = body;
 
-        if (!programName || !semester || !academicYear || !feeComponents?.length) {
-            return NextResponse.json({ error: 'programName, semester, academicYear, feeComponents are required.' }, { status: 400 });
+        if (!batchId || !semesterNumber || !feeHeads?.length) {
+            return NextResponse.json(
+                { error: 'batchId, semesterNumber, and feeHeads (non-empty array) are required.' },
+                { status: 400 }
+            );
         }
 
-        const totalAmount = feeComponents.reduce((s: number, c: any) => s + (c.amount || 0), 0);
+        // Validate each fee head
+        for (const head of feeHeads) {
+            if (!head.name || typeof head.amount !== 'number') {
+                return NextResponse.json(
+                    { error: 'Each feeHead must have a name (string) and amount (number).' },
+                    { status: 400 }
+                );
+            }
+        }
 
         const fs = await FeeStructure.create({
-            programName, semester, academicYear, feeComponents,
-            totalAmount, lateFeePerDay: lateFeePerDay || 0,
-            gracePeriodDays: gracePeriodDays || 5,
+            batchId,
+            semesterNumber,
+            feeHeads,
+            lateFeePerDay: lateFeePerDay || 0,
+            gracePeriodDays: gracePeriodDays ?? 7,
             isActive: true,
-            createdBy: session.user.email || 'unknown',
         });
 
         await writeAuditLog({
             action: 'CREATE',
             entityType: 'FeeStructure',
             entityId: fs._id.toString(),
-            entityReference: `${programName} - ${semester}`,
+            entityReference: `Batch ${batchId} — Semester ${semesterNumber}`,
             performedBy: session.user.email || 'unknown',
+            newState: { batchId, semesterNumber, totalAmount: fs.totalAmount },
         });
 
         return NextResponse.json(fs, { status: 201 });

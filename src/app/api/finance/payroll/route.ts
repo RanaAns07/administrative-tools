@@ -1,16 +1,16 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
 import PayrollRun from '@/models/finance/PayrollRun';
 import Employee from '@/models/finance/Employee';
 import LoanAdvance from '@/models/finance/LoanAdvance';
-import JournalEntry from '@/models/finance/JournalEntry';
-import ChartOfAccount from '@/models/finance/ChartOfAccount';
-import { generateJENumber, writeAuditLog } from '@/lib/finance-utils';
+import { writeAuditLog } from '@/lib/finance-utils';
 
-// GET /api/finance/payroll
+/**
+ * GET /api/finance/payroll
+ * List payroll runs with optional year/status filters.
+ */
 export async function GET(req: Request) {
     try {
         await dbConnect();
@@ -28,7 +28,15 @@ export async function GET(req: Request) {
     }
 }
 
-// POST /api/finance/payroll — Process payroll for a month/year
+/**
+ * POST /api/finance/payroll — Process payroll for a month/year.
+ *
+ * NOTE (2026-02-27 — Khatta Migration):
+ *   Journal Entry auto-creation has been removed. After creating a PayrollRun,
+ *   record the actual disbursement as a Transaction:
+ *     type: 'OUT', referenceType: 'PAYROLL_SLIP', referenceId: run._id
+ *   This keeps the wallet balance accurate without any double-entry logic.
+ */
 export async function POST(req: Request) {
     try {
         const session = await getServerSession();
@@ -36,7 +44,7 @@ export async function POST(req: Request) {
 
         await dbConnect();
         const body = await req.json();
-        const { month, year, salaryAccountCode = '5001', payableAccountCode = '2100' } = body;
+        const { month, year } = body;
 
         if (!month || !year) {
             return NextResponse.json({ error: 'month and year are required.' }, { status: 400 });
@@ -58,17 +66,16 @@ export async function POST(req: Request) {
         const loans = await LoanAdvance.find({ status: 'ACTIVE' }).lean();
         const loanMap = new Map(loans.map((l) => [l.employee.toString(), l]));
 
-        // Compute payslips (simplified: basic salary only, with loan deductions)
+        // Compute payslips
         let totalGross = 0;
         let totalDeductions = 0;
         let totalNet = 0;
 
         const payslips = employees.map((emp) => {
             const basic = emp.basicSalary;
-            const allowances = 0; // Extend with allowance profiles later
+            const allowances = 0;
             const gross = basic + allowances;
 
-            // Income tax (simplified slab — PKR 50k+ @ 1%)
             const incomeTax = gross > 50000 ? parseFloat((gross * 0.01).toFixed(2)) : 0;
             const providentFund = parseFloat((gross * 0.05).toFixed(2));
             const loanDeduction = loanMap.get(emp._id.toString())?.monthlyInstallment || 0;
@@ -102,104 +109,47 @@ export async function POST(req: Request) {
         const periodStart = new Date(year, month - 1, 1);
         const periodEnd = new Date(year, month, 0);
 
-        const dbSession = await mongoose.startSession();
-        dbSession.startTransaction();
+        const run = await PayrollRun.create({
+            runNumber,
+            month, year,
+            periodStart, periodEnd,
+            status: 'POSTED',
+            payslips,
+            totalGross: parseFloat(totalGross.toFixed(2)),
+            totalDeductions: parseFloat(totalDeductions.toFixed(2)),
+            totalNetPayable: parseFloat(totalNet.toFixed(2)),
+            processedBy: session.user.email,
+            processedAt: new Date(),
+            approvedBy: session.user.email,
+            approvedAt: new Date(),
+            postedBy: session.user.email,
+            postedAt: new Date(),
+            createdBy: session.user.email || 'unknown',
+        });
 
-        try {
-            // Build salary journal entry: DR Salary Expense / CR Salary Payable
-            const [salaryAcct, payableAcct] = await Promise.all([
-                ChartOfAccount.findOne({ accountCode: salaryAccountCode }).lean(),
-                ChartOfAccount.findOne({ accountCode: payableAccountCode }).lean(),
-            ]);
-
-            const jeNumber = await generateJENumber();
-            const je = await JournalEntry.create([{
-                entryNumber: jeNumber,
-                entryDate: periodEnd,
-                description: `Payroll: ${new Date(year, month - 1).toLocaleString('default', { month: 'long' })} ${year}`,
-                source: 'PAYROLL',
-                status: 'POSTED',
-                lines: [
-                    {
-                        account: salaryAcct?._id,
-                        accountCode: salaryAccountCode,
-                        accountName: salaryAcct?.accountName || 'Salary Expense',
-                        debit: parseFloat(totalGross.toFixed(2)),
-                        credit: 0,
-                        narration: 'Gross salary',
-                    },
-                    {
-                        account: payableAcct?._id,
-                        accountCode: payableAccountCode,
-                        accountName: payableAcct?.accountName || 'Salary Payable',
-                        debit: 0,
-                        credit: parseFloat(totalNet.toFixed(2)),
-                        narration: 'Net salary payable',
-                    },
-                    // Tax withheld goes to tax payable (simplified)
-                    {
-                        account: payableAcct?._id,
-                        accountCode: '2101',
-                        accountName: 'Tax Withheld Payable',
-                        debit: 0,
-                        credit: parseFloat((totalGross - totalNet - totalDeductions + totalDeductions - (totalGross - totalNet)).toFixed(2)) || 0,
-                        narration: 'Tax & deductions',
-                    },
-                ].filter((l) => l.debit > 0 || l.credit > 0),
-                totalDebit: parseFloat(totalGross.toFixed(2)),
-                totalCredit: parseFloat(totalGross.toFixed(2)),
-                submittedBy: session.user!.email || 'unknown',
-                postedBy: session.user!.email || 'unknown',
-                postedAt: new Date(),
-            }], { session: dbSession });
-
-            const run = await PayrollRun.create([{
-                runNumber,
-                month, year,
-                periodStart, periodEnd,
-                status: 'POSTED',
-                payslips,
-                totalGross: parseFloat(totalGross.toFixed(2)),
-                totalDeductions: parseFloat(totalDeductions.toFixed(2)),
-                totalNetPayable: parseFloat(totalNet.toFixed(2)),
-                journalEntry: je[0]._id,
-                processedBy: session.user!.email,
-                processedAt: new Date(),
-                approvedBy: session.user!.email,
-                approvedAt: new Date(),
-                postedBy: session.user!.email,
-                postedAt: new Date(),
-                createdBy: session.user!.email || 'unknown',
-            }], { session: dbSession });
-
-            // Update loan balances
-            for (const emp of employees) {
-                const loan = loanMap.get(emp._id.toString());
-                if (loan && loan.monthlyInstallment > 0) {
-                    await LoanAdvance.findByIdAndUpdate(loan._id, {
-                        $inc: { totalRepaid: loan.monthlyInstallment, remainingBalance: -loan.monthlyInstallment },
-                    }, { session: dbSession });
-                }
+        // Update loan balances
+        for (const emp of employees) {
+            const loan = loanMap.get(emp._id.toString());
+            if (loan && loan.monthlyInstallment > 0) {
+                await LoanAdvance.findByIdAndUpdate(loan._id, {
+                    $inc: { totalRepaid: loan.monthlyInstallment, remainingBalance: -loan.monthlyInstallment },
+                });
             }
-
-            await dbSession.commitTransaction();
-
-            await writeAuditLog({
-                action: 'PROCESS_PAYROLL',
-                entityType: 'PayrollRun',
-                entityId: run[0]._id.toString(),
-                entityReference: runNumber,
-                performedBy: session.user!.email || 'unknown',
-                newState: { month, year, employeeCount: employees.length, totalGross },
-            });
-
-            return NextResponse.json({ payrollRun: run[0], journalEntry: je[0] }, { status: 201 });
-        } catch (err) {
-            await dbSession.abortTransaction();
-            throw err;
-        } finally {
-            dbSession.endSession();
         }
+
+        await writeAuditLog({
+            action: 'PROCESS_PAYROLL',
+            entityType: 'PayrollRun',
+            entityId: run._id.toString(),
+            entityReference: runNumber,
+            performedBy: session.user.email || 'unknown',
+            newState: { month, year, employeeCount: employees.length, totalGross },
+        });
+
+        return NextResponse.json({
+            payrollRun: run,
+            message: `Payroll processed. Record disbursement via POST /api/finance/transactions with type:OUT and referenceType:PAYROLL_SLIP.`,
+        }, { status: 201 });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

@@ -2,18 +2,25 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import FeePayment from '@/models/finance/FeePayment';
-import FeeInvoice from '@/models/finance/FeeInvoice';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
-// GET: list payments filtered by status (default: PENDING)
+/**
+ * GET /api/admin/payment-approvals
+ * List FeePayment records filtered by status (default: PENDING).
+ *
+ * NOTE: In the Khatta system, fee collection creates a Transaction (IN) directly
+ * via POST /api/finance/fee-collection. The FeePayment model is a legacy
+ * record-keeping layer. For new invoice payments, the fee-collection route
+ * is the canonical flow. This route is retained for legacy payment record display.
+ */
 export async function GET(req: NextRequest) {
     try {
         await dbConnect();
         const status = req.nextUrl.searchParams.get('status') || 'PENDING';
 
         const payments = await FeePayment.find({ status })
-            .populate({ path: 'feeInvoice', select: 'invoiceNumber studentName rollNumber totalAmount' })
+            .populate({ path: 'feeInvoice', select: 'studentId studentName rollNumber totalAmount' })
             .sort({ createdAt: -1 })
             .lean();
 
@@ -23,7 +30,11 @@ export async function GET(req: NextRequest) {
     }
 }
 
-// PATCH: approve or reject a payment
+/**
+ * PATCH /api/admin/payment-approvals
+ * Approve or reject a legacy FeePayment record.
+ * This does NOT update FeeInvoice amountPaid — use the fee-collection route for that.
+ */
 export async function PATCH(req: NextRequest) {
     try {
         await dbConnect();
@@ -50,13 +61,6 @@ export async function PATCH(req: NextRequest) {
             payment.status = 'APPROVED';
             payment.approvedBy = performedBy;
             payment.approvedAt = new Date();
-
-            // Update the linked FeeInvoice paidAmount
-            const invoice = await FeeInvoice.findById(payment.feeInvoice);
-            if (invoice) {
-                invoice.paidAmount = (invoice.paidAmount || 0) + payment.amount;
-                await invoice.save(); // pre-save hook recalculates outstandingAmount + status
-            }
         } else {
             payment.status = 'REJECTED';
             payment.rejectionReason = rejectionReason || 'Rejected by admin';

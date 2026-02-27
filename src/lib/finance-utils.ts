@@ -1,12 +1,16 @@
 /**
  * Finance Utilities
- * Shared helpers: auto-number generation, audit logging, period validation
+ * Shared helpers: auto-number generation, audit logging
+ *
+ * NOTE (2026-02-27): The following functions were removed during the Khatta migration:
+ *   - generateJENumber()          — Journal Entries replaced by Transactions
+ *   - validatePeriodNotLocked()   — Accounting Periods deprecated
+ *   - validateDoubleEntry()       — No double-entry in Khatta system
+ *   - checkBudgetOverspend()      — Budget module decoupled; no JE dependency
  */
 
 import dbConnect from '@/lib/mongodb';
 import AuditLog, { AuditAction } from '@/models/finance/AuditLog';
-import AccountingPeriod from '@/models/finance/AccountingPeriod';
-import JournalEntry from '@/models/finance/JournalEntry';
 
 // ─── Sequential Number Generator ────────────────────────────────────────────
 
@@ -31,10 +35,6 @@ async function getNextSequence(
     const lastNum = docs[0][field] as string;
     const seq = parseInt(lastNum.split('-').pop() || '0', 10);
     return `${prefix}-${year}-${String(seq + 1).padStart(5, '0')}`;
-}
-
-export async function generateJENumber(): Promise<string> {
-    return getNextSequence(JournalEntry as any, 'entryNumber', 'JE');
 }
 
 export async function generateReceiptNumber(): Promise<string> {
@@ -75,93 +75,4 @@ export async function writeAuditLog(params: {
         ...params,
         performedAt: new Date(),
     });
-}
-
-// ─── Period Lock Validator ────────────────────────────────────────────────────
-
-export async function validatePeriodNotLocked(entryDate: Date): Promise<{ locked: boolean; message?: string }> {
-    await dbConnect();
-    const d = new Date(entryDate);
-
-    const period = await AccountingPeriod.findOne({
-        startDate: { $lte: d },
-        endDate: { $gte: d },
-    }).lean();
-
-    if (!period) return { locked: false }; // No period defined = allow
-    if (period.isLocked) {
-        return {
-            locked: true,
-            message: `Accounting period "${period.periodName}" is locked and cannot accept new entries.`,
-        };
-    }
-    return { locked: false };
-}
-
-// ─── Double-Entry Validator ───────────────────────────────────────────────────
-
-export function validateDoubleEntry(lines: { debit: number; credit: number }[]): {
-    valid: boolean;
-    totalDebit: number;
-    totalCredit: number;
-    message?: string;
-} {
-    const totalDebit = lines.reduce((sum, l) => sum + (l.debit || 0), 0);
-    const totalCredit = lines.reduce((sum, l) => sum + (l.credit || 0), 0);
-
-    // Use toFixed(2) to handle floating point
-    const debitRounded = parseFloat(totalDebit.toFixed(2));
-    const creditRounded = parseFloat(totalCredit.toFixed(2));
-
-    if (debitRounded !== creditRounded) {
-        return {
-            valid: false,
-            totalDebit: debitRounded,
-            totalCredit: creditRounded,
-            message: `Debits (${debitRounded.toLocaleString()}) must equal Credits (${creditRounded.toLocaleString()}). Difference: ${Math.abs(debitRounded - creditRounded).toLocaleString()}`,
-        };
-    }
-    if (debitRounded === 0) {
-        return { valid: false, totalDebit: 0, totalCredit: 0, message: 'Journal entry cannot have zero totals.' };
-    }
-    return { valid: true, totalDebit: debitRounded, totalCredit: creditRounded };
-}
-
-// ─── Budget Overspend Check ───────────────────────────────────────────────────
-
-export async function checkBudgetOverspend(
-    accountCode: string,
-    additionalAmount: number,
-    fiscalYearId: string
-): Promise<{ overspend: boolean; budgeted: number; utilized: number; message?: string }> {
-    const { default: Budget } = await import('@/models/finance/Budget');
-    await dbConnect();
-
-    const budget = await Budget.findOne({ fiscalYear: fiscalYearId, status: 'ACTIVE' }).lean();
-    if (!budget) return { overspend: false, budgeted: 0, utilized: 0 };
-
-    const line = budget.budgetLines.find((l: any) => l.accountCode === accountCode);
-    if (!line) return { overspend: false, budgeted: 0, utilized: 0 };
-
-    // Sum posted JE lines for this account in the fiscal year
-    const JE = await import('@/models/finance/JournalEntry');
-    const posted = await JE.default.aggregate([
-        { $match: { status: 'POSTED', fiscalYear: fiscalYearId } },
-        { $unwind: '$lines' },
-        { $match: { 'lines.accountCode': accountCode } },
-        { $group: { _id: null, total: { $sum: '$lines.debit' } } }
-    ]);
-
-    const utilized = posted[0]?.total || 0;
-    const budgeted = line.budgetedAmount;
-    const overspend = (utilized + additionalAmount) > budgeted && !budget.allowOverspend;
-
-    return {
-        overspend,
-        budgeted,
-        utilized,
-        message: overspend
-            ? `Budget overspend: Account ${accountCode} has PKR ${budgeted.toLocaleString()} budgeted, PKR ${utilized.toLocaleString()} utilized. Adding PKR ${additionalAmount.toLocaleString()} exceeds budget.`
-            : undefined,
-    };
 }
