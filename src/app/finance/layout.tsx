@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-    Landmark, LayoutDashboard, BookOpen, FileText, BarChart2, Users,
-    TrendingDown, Building2, Wallet, ClipboardList, Package, UserCheck,
-    PiggyBank, ChevronDown, ChevronRight, Menu, X, LogOut, Settings,
-    Scale, CalendarDays, ShieldCheck,
+    Landmark, LayoutDashboard, FileText, Users,
+    TrendingDown, Building2, Wallet, ClipboardList, UserCheck,
+    ChevronDown, ChevronRight, Menu, X, LogOut,
+    ShieldCheck, ArrowRightLeft, GraduationCap, Tag,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 
@@ -20,56 +20,29 @@ interface NavItem {
 
 const navItems: NavItem[] = [
     { label: 'Dashboard', href: '/finance', icon: LayoutDashboard },
+    { label: 'Wallets', href: '/finance/wallets', icon: Wallet },
+    { label: 'Transactions', href: '/finance/transactions', icon: ArrowRightLeft },
+    { label: 'Expenses', href: '/finance/expenses', icon: TrendingDown },
+    { label: 'Payroll', href: '/finance/payroll', icon: UserCheck },
     {
-        label: 'Core Accounting',
-        icon: BookOpen,
+        label: 'Fees',
+        icon: GraduationCap,
         children: [
-            { label: 'Chart of Accounts', href: '/finance/chart-of-accounts', icon: Scale },
-            { label: 'Journal Entries', href: '/finance/journal-entries', icon: FileText },
-            { label: 'General Ledger', href: '/finance/general-ledger', icon: BookOpen },
-            { label: 'Trial Balance', href: '/finance/trial-balance', icon: BarChart2 },
-            { label: 'Fiscal Years', href: '/finance/fiscal-years', icon: CalendarDays },
+            { label: 'Structures', href: '/finance/fees/structures', icon: ClipboardList },
+            { label: 'Invoices', href: '/finance/fees/invoices', icon: FileText },
+            { label: 'Receive', href: '/finance/fees/receive', icon: Wallet },
         ],
     },
     {
-        label: 'Financial Reports',
-        icon: BarChart2,
+        label: 'University',
+        icon: Building2,
         children: [
-            { label: 'Balance Sheet', href: '/finance/balance-sheet', icon: Scale },
-            { label: 'Income Statement', href: '/finance/income-statement', icon: TrendingDown },
+            { label: 'Programs', href: '/finance/university/programs', icon: GraduationCap },
+            { label: 'Students', href: '/finance/university/students', icon: Users },
         ],
     },
-    {
-        label: 'Student Fees',
-        icon: Users,
-        children: [
-            { label: 'Fee Structures', href: '/finance/fee-structures', icon: ClipboardList },
-            { label: 'Fee Invoices', href: '/finance/fee-invoices', icon: FileText },
-            { label: 'Payments', href: '/finance/fee-payments', icon: Wallet },
-            { label: 'Aging Report', href: '/finance/aging-report', icon: BarChart2 },
-        ],
-    },
-    {
-        label: 'Accounts Payable',
-        icon: TrendingDown,
-        children: [
-            { label: 'Vendors', href: '/finance/vendors', icon: Building2 },
-            { label: 'Purchase Requests', href: '/finance/purchase-requests', icon: ClipboardList },
-            { label: 'Purchase Orders', href: '/finance/purchase-orders', icon: Package },
-            { label: 'Vendor Invoices', href: '/finance/vendor-invoices', icon: FileText },
-        ],
-    },
-    {
-        label: 'Payroll',
-        icon: UserCheck,
-        children: [
-            { label: 'Employees', href: '/finance/employees', icon: Users },
-            { label: 'Payroll Runs', href: '/finance/payroll', icon: UserCheck },
-        ],
-    },
-    { label: 'Budget', href: '/finance/budget', icon: PiggyBank },
-    { label: 'Assets', href: '/finance/assets', icon: Building2 },
-    { label: 'Cash & Bank', href: '/finance/cash-bank', icon: Wallet },
+    { label: 'Staff', href: '/finance/staff', icon: Users },
+    { label: 'Categories', href: '/finance/categories', icon: Tag },
     { label: 'Audit Log', href: '/finance/audit-log', icon: ShieldCheck },
 ];
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * @file route.ts
  * @description Payroll Disbursement API — Batch Salary Payment

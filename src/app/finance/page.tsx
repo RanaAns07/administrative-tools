@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * @file page.tsx
  * @description Executive Finance Dashboard — Chancellor's View

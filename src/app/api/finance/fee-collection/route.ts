@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * @file route.ts
  * @description Fee Collection API — Khatta Engine Bridge
@@ -26,7 +27,6 @@ import FeeInvoice from '@/models/finance/FeeInvoice';
 import Transaction from '@/models/finance/Transaction';
 import Wallet from '@/models/finance/Wallet';
 import Category from '@/models/finance/Category';
-import StudentProfile from '@/models/university/StudentProfile';
 import { writeAuditLog } from '@/lib/finance-utils';
 
 // ─── POST /api/finance/fee-collection ────────────────────────────────────────
@@ -267,6 +267,19 @@ export async function GET(req: Request) {
         }
         if (status) {
             query.status = status;
+        }
+
+        const search = searchParams.get('search');
+        if (search) {
+            const StudentProfile = mongoose.models.StudentProfile || mongoose.model('StudentProfile');
+            const matchingStudents = await StudentProfile.find({
+                $or: [
+                    { registrationNumber: { $regex: search, $options: 'i' } },
+                    { name: { $regex: search, $options: 'i' } },
+                ]
+            }).select('_id').lean();
+            const studentIds = matchingStudents.map((s: any) => s._id);
+            query.studentProfileId = { $in: studentIds };
         }
         if (feeStructureId && mongoose.isValidObjectId(feeStructureId)) {
             query.feeStructureId = feeStructureId;

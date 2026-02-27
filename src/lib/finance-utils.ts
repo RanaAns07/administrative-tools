@@ -39,19 +39,23 @@ async function getNextSequence(
 
 export async function generateReceiptNumber(): Promise<string> {
     const { default: FeePayment } = await import('@/models/finance/FeePayment');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return getNextSequence(FeePayment as any, 'receiptNumber', 'RCP');
 }
 
 export async function generateInvoiceNumber(): Promise<string> {
     const { default: FeeInvoice } = await import('@/models/finance/FeeInvoice');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return getNextSequence(FeeInvoice as any, 'invoiceNumber', 'INV');
 }
 
 export async function generateVendorInvoiceRef(): Promise<string> {
     const { default: VendorInvoice } = await import('@/models/finance/VendorInvoice');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return getNextSequence(VendorInvoice as any, 'internalReference', 'VIN');
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function generateSequenceNumber(prefix: string, model: any, field: string): Promise<string> {
     return getNextSequence(model, field, prefix);
 }

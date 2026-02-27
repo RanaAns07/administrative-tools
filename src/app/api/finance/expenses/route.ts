@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * @file route.ts
  * @description Money-Out API — Operational Expense Recording

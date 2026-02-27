@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Types } from 'mongoose';
+import mongoose, { Schema, Document } from 'mongoose';
 
 export type BankAccountType = 'CURRENT' | 'SAVINGS' | 'PETTY_CASH' | 'FIXED_DEPOSIT';
 

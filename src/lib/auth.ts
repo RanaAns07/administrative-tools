@@ -60,7 +60,7 @@ export const authOptions: NextAuthOptions = {
             if (session.user) {
                 session.user.id = token.id as string;
                 session.user.role = token.role as 'SuperAdmin' | 'Admin' | 'Staff';
-                session.user.permissions = token.permissions as Record<string, any>;
+                session.user.permissions = token.permissions as Record<string, unknown>;
             }
             return session;
         },

@@ -6,7 +6,7 @@ export interface IUser extends Document {
     password?: string;
     role: 'SuperAdmin' | 'Admin' | 'Staff';
     isActive: boolean;
-    permissions: Record<string, any>;
+    permissions: Record<string, unknown>;
     createdAt: Date;
     updatedAt: Date;
 }

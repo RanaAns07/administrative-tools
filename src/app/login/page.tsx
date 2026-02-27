@@ -4,10 +4,9 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 function LoginContent() {
-    const router = useRouter();
     const searchParams = useSearchParams();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -35,7 +34,8 @@ function LoginContent() {
                 setError(res.error);
                 setIsLoading(false);
             }
-        } catch (err) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (_) {
             setError("An unexpected error occurred. Please try again.");
             setIsLoading(false);
         }
