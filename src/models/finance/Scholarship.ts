@@ -1,58 +1,112 @@
-import mongoose, { Schema, Document, Types } from 'mongoose';
+/**
+ * @file Scholarship.ts
+ * @description Student Scholarship / Discount Record
+ *
+ * Redesigned for Khatta architecture: scholarships are student-level records
+ * valid across a range of semesters. The discount is applied to invoices
+ * by the service layer — not by hooks.
+ *
+ * TYPES:
+ *   PERCENTAGE — e.g. 50% off total invoice amount
+ *   FIXED      — e.g. PKR 25,000 fixed discount per semester
+ *
+ * CATEGORIES: merit, need-based, sports, government, staff-dependent, etc.
+ */
 
-export type ScholarshipType =
-    | 'MERIT' | 'NEED_BASED' | 'SPORTS' | 'STAFF_DEPENDENT' | 'HAFIZ_E_QURAN'
-    | 'SIBLING' | 'GOVERNMENT' | 'OTHER';
+import mongoose, { Schema, Document, Model, Types } from 'mongoose';
+
+export type ScholarshipDiscountType = 'PERCENTAGE' | 'FIXED';
+
+export type ScholarshipCategory =
+    | 'MERIT'
+    | 'NEED_BASED'
+    | 'SPORTS'
+    | 'STAFF_DEPENDENT'
+    | 'HAFIZ_E_QURAN'
+    | 'SIBLING'
+    | 'GOVERNMENT'
+    | 'OTHER';
 
 export interface IScholarship extends Document {
-    studentId: string;
-    studentName: string;
-    rollNumber: string;
-    feeInvoice: Types.ObjectId;
-    scholarshipType: ScholarshipType;
-    description?: string;
-    discountType: 'PERCENTAGE' | 'FIXED';
-    discountValue: number;      // % or fixed amount
-    discountAmount: number;     // Actual computed PKR amount
-    journalEntry?: Types.ObjectId;
-    approvedBy: string;
-    approvedAt: Date;
-    academicYear: string;
+    studentProfileId: Types.ObjectId;
+    name: string;                      // "Merit Scholarship"
+    category: ScholarshipCategory;
+    discountType: ScholarshipDiscountType;
+    discountValue: number;             // PERCENTAGE: 0–100 | FIXED: PKR amount
+    validFromSemester: number;
+    validToSemester: number;
     isActive: boolean;
-    createdBy: string;
+    approvedBy: Types.ObjectId;        // User who granted this scholarship
+    approvedAt: Date;
+    notes?: string;
     createdAt: Date;
     updatedAt: Date;
 }
 
 const ScholarshipSchema = new Schema<IScholarship>(
     {
-        studentId: { type: String, required: true },
-        studentName: { type: String, required: true },
-        rollNumber: { type: String, required: true },
-        feeInvoice: { type: Schema.Types.ObjectId, ref: 'FeeInvoice', required: true },
-        scholarshipType: {
+        studentProfileId: {
+            type: Schema.Types.ObjectId,
+            ref: 'StudentProfile',
+            required: [true, 'Student profile reference is required.'],
+        },
+        name: {
+            type: String,
+            required: [true, 'Scholarship name is required.'],
+            trim: true,
+            maxlength: [200, 'Name must not exceed 200 characters.'],
+        },
+        category: {
             type: String,
             enum: ['MERIT', 'NEED_BASED', 'SPORTS', 'STAFF_DEPENDENT', 'HAFIZ_E_QURAN', 'SIBLING', 'GOVERNMENT', 'OTHER'],
-            required: true,
+            required: [true, 'Scholarship category is required.'],
         },
-        description: { type: String },
-        discountType: { type: String, enum: ['PERCENTAGE', 'FIXED'], required: true },
-        discountValue: { type: Number, required: true, min: 0 },
-        discountAmount: { type: Number, required: true, min: 0 },
-        journalEntry: { type: Schema.Types.ObjectId, ref: 'JournalEntry' },
-        approvedBy: { type: String, required: true },
-        approvedAt: { type: Date, required: true },
-        academicYear: { type: String, required: true },
-        isActive: { type: Boolean, default: true },
-        createdBy: { type: String, required: true },
+        discountType: {
+            type: String,
+            enum: ['PERCENTAGE', 'FIXED'],
+            required: [true, 'Discount type is required.'],
+        },
+        discountValue: {
+            type: Number,
+            required: [true, 'Discount value is required.'],
+            min: [0, 'Discount value cannot be negative.'],
+        },
+        validFromSemester: {
+            type: Number,
+            required: true,
+            min: 1,
+        },
+        validToSemester: {
+            type: Number,
+            required: true,
+            min: 1,
+        },
+        isActive: {
+            type: Boolean,
+            default: true,
+        },
+        approvedBy: {
+            type: Schema.Types.ObjectId,
+            ref: 'User',
+            required: [true, 'approvedBy (User) is required.'],
+        },
+        approvedAt: {
+            type: Date,
+            default: Date.now,
+        },
+        notes: { type: String, trim: true, maxlength: 1000 },
     },
-    { timestamps: true }
+    {
+        timestamps: true,
+        collection: 'finance_scholarships',
+    }
 );
 
-ScholarshipSchema.index({ studentId: 1 });
-ScholarshipSchema.index({ feeInvoice: 1 });
+ScholarshipSchema.index({ studentProfileId: 1 });
+ScholarshipSchema.index({ isActive: 1 });
+ScholarshipSchema.index({ category: 1 });
 
-const Scholarship =
+const Scholarship: Model<IScholarship> =
     mongoose.models.Scholarship ||
     mongoose.model<IScholarship>('Scholarship', ScholarshipSchema);
 

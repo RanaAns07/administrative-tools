@@ -1,73 +1,62 @@
 /**
  * @file FeeInvoice.ts
- * @description Khatta Fee Engine — Fee Invoice (Student Challan)
+ * @description Khatta Fee Engine — Fee Invoice (Pure Schema, No Hooks)
  *
- * A FeeInvoice is the actual fee challan issued to one student for one
- * semester. It is generated from a FeeStructure template and tracks
- * how much has been paid.
+ * ARCHITECTURE: No pre('save') hooks. Status is derived and set explicitly
+ * by the FinanceTransactionService after each payment operation.
  *
- * PAYMENT FLOW (Khatta integration):
- *   FeeInvoice.amountPaid    ← updated by the fee-collection API
- *   Transaction (type: IN)   ← created by the fee-collection API
- *   Wallet.currentBalance    ← auto-updated by Transaction.pre('save')
+ * Key additions over previous version:
+ *   - `batchId`           for fast batch-level reporting
+ *   - `scholarshipId`     reference to applied scholarship
+ *   - `discountFromAdvance` tracks advance balance applied
+ *   - Status derivation moved to service layer (not hook)
  *
- * Do NOT touch Wallet.currentBalance directly; it is managed exclusively
- * by the Transaction pre-save hook.
- *
- * STATUS TRANSITIONS:
- *   PENDING  →  PARTIAL  →  PAID
- *   PENDING  →  OVERDUE          (when due date passes, no payment)
- *   Any      →  WAIVED           (admin writes off outstanding amount)
+ * STATUS TRANSITIONS (managed by service, not hooks):
+ *   PENDING → PARTIAL → PAID
+ *   PENDING → OVERDUE
+ *   Any     → WAIVED (admin writes off outstanding amount)
  */
 
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 
-// ─── TypeScript Interface ─────────────────────────────────────────────────────
-
 export type FeeInvoiceStatus = 'PENDING' | 'PARTIAL' | 'PAID' | 'OVERDUE' | 'WAIVED';
 
 export interface IFeeInvoice extends Document {
-    /** The student this challan was issued to */
     studentProfileId: Types.ObjectId;
-    /** The fee structure template this invoice was generated from */
+    batchId: Types.ObjectId;          // Denormalized for batch-level reports
     feeStructureId: Types.ObjectId;
-    /** Which semester number this challan is for (denormalised for fast querying) */
     semesterNumber: number;
-    /** Date the challan was generated / issued */
     issueDate: Date;
-    /** Last date for payment without late fees */
     dueDate: Date;
-    /** Original fee amount from the FeeStructure (copied at invoice time) */
     totalAmount: number;
-    /** Scholarship or discount applied — reduces effective payable amount */
-    discountAmount: number;
-    /** Accumulated late fee penalty (added when payment is made after dueDate) */
+    discountAmount: number;           // From scholarship/manual discount
+    discountFromAdvance: number;      // From StudentAdvanceBalance auto-application
     penaltyAmount: number;
-    /** Total received so far via fee-collection API */
     amountPaid: number;
-    /** Invoice lifecycle status */
     status: FeeInvoiceStatus;
-    /** Optional admin note (e.g. "Fee waived — scholarship approved") */
+    scholarshipId?: Types.ObjectId;
+    installmentNumber?: number;
     notes?: string;
-    /** Virtual: amount still outstanding */
-    readonly arrears: number;
     createdAt: Date;
     updatedAt: Date;
 }
-
-// ─── Schema ───────────────────────────────────────────────────────────────────
 
 const FeeInvoiceSchema = new Schema<IFeeInvoice>(
     {
         studentProfileId: {
             type: Schema.Types.ObjectId,
             ref: 'StudentProfile',
-            required: [true, 'Student profile reference (studentProfileId) is required.'],
+            required: [true, 'Student profile reference is required.'],
+        },
+        batchId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Batch',
+            required: [true, 'Batch reference is required.'],
         },
         feeStructureId: {
             type: Schema.Types.ObjectId,
             ref: 'FeeStructureV2',
-            required: [true, 'Fee structure reference (feeStructureId) is required.'],
+            required: [true, 'Fee structure reference is required.'],
         },
         semesterNumber: {
             type: Number,
@@ -90,12 +79,17 @@ const FeeInvoiceSchema = new Schema<IFeeInvoice>(
         discountAmount: {
             type: Number,
             default: 0,
-            min: [0, 'Discount amount cannot be negative.'],
+            min: [0, 'Discount cannot be negative.'],
+        },
+        discountFromAdvance: {
+            type: Number,
+            default: 0,
+            min: [0, 'Advance discount cannot be negative.'],
         },
         penaltyAmount: {
             type: Number,
             default: 0,
-            min: [0, 'Penalty amount cannot be negative.'],
+            min: [0, 'Penalty cannot be negative.'],
         },
         amountPaid: {
             type: Number,
@@ -111,6 +105,15 @@ const FeeInvoiceSchema = new Schema<IFeeInvoice>(
             },
             default: 'PENDING',
         },
+        scholarshipId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Scholarship',
+            default: null,
+        },
+        installmentNumber: {
+            type: Number,
+            min: 1,
+        },
         notes: {
             type: String,
             trim: true,
@@ -120,64 +123,22 @@ const FeeInvoiceSchema = new Schema<IFeeInvoice>(
     {
         timestamps: true,
         collection: 'finance_fee_invoices',
-        toJSON: { virtuals: true },
-        toObject: { virtuals: true },
     }
 );
 
-// ─── Virtuals ─────────────────────────────────────────────────────────────────
-
-/**
- * arrears — the amount the student still owes.
- *
- * Formula: (totalAmount - discountAmount + penaltyAmount) - amountPaid
- * Clamped to 0 so it never goes negative (overpayments show as 0 here).
- */
-FeeInvoiceSchema.virtual('arrears').get(function (this: IFeeInvoice) {
-    const payable = this.totalAmount - this.discountAmount + this.penaltyAmount;
+// Computed property available as a plain getter (no virtual needed for reports)
+FeeInvoiceSchema.methods.getArrears = function (this: IFeeInvoice): number {
+    const payable = this.totalAmount - this.discountAmount - this.discountFromAdvance + this.penaltyAmount;
     return Math.max(0, payable - this.amountPaid);
-});
+};
 
-// ─── Pre-Save Hook ────────────────────────────────────────────────────────────
-
-/**
- * Auto-transition status based on payment state.
- * The fee-collection API should NEVER set status manually —
- * simply update amountPaid and let this hook handle the rest.
- */
-FeeInvoiceSchema.pre('save', function () {
-    // Never override a manually-set terminal state
-    if (this.status === 'WAIVED') return;
-
-    const effectiveTotal = this.totalAmount - this.discountAmount;
-
-    if (this.amountPaid >= effectiveTotal) {
-        this.status = 'PAID';
-    } else if (this.amountPaid > 0) {
-        this.status = 'PARTIAL';
-    } else if (new Date() > this.dueDate) {
-        this.status = 'OVERDUE';
-    } else {
-        this.status = 'PENDING';
-    }
-});
-
-// ─── Indexes ──────────────────────────────────────────────────────────────────
-
-// Most common query: all invoices for a student
 FeeInvoiceSchema.index({ studentProfileId: 1 });
-// Finance dashboard: group by status
+FeeInvoiceSchema.index({ batchId: 1 });
 FeeInvoiceSchema.index({ status: 1 });
-// Overdue alerts: find all past-due, unpaid invoices
 FeeInvoiceSchema.index({ dueDate: 1, status: 1 });
-// Batch-level fee reports
 FeeInvoiceSchema.index({ feeStructureId: 1 });
-// Semester filter
 FeeInvoiceSchema.index({ semesterNumber: 1 });
 
-// ─── Model Export ─────────────────────────────────────────────────────────────
-
-// Using 'FeeInvoiceV2' to avoid cache collision with the old accounting model.
 const FeeInvoice: Model<IFeeInvoice> =
     (mongoose.models.FeeInvoiceV2 as Model<IFeeInvoice>) ||
     mongoose.model<IFeeInvoice>('FeeInvoiceV2', FeeInvoiceSchema);

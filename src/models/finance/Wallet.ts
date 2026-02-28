@@ -1,57 +1,36 @@
 /**
  * @file Wallet.ts
- * @description Khatta Engine — Wallet Model
+ * @description Khatta Engine — Wallet (Pure Schema, No Side Effects)
  *
- * A Wallet represents any physical or digital place where money is held.
- * The balance here is the single source of truth; it is updated automatically
- * by the Transaction pre-save hook — do NOT update it manually from API routes.
+ * ARCHITECTURE: This model has NO pre/post hooks that affect balances.
+ * Balance is ONLY updated by FinanceTransactionService via atomic $inc
+ * inside MongoDB client sessions.
  *
- * Examples:
- *   BANK       → 'Main Bank HBL', 'MCB Payroll Account'
- *   CASH       → 'Front Desk Petty Cash', 'Admission Office Cash'
- *   INVESTMENT → 'Reserve Fund', 'Fixed Deposit A'
+ * Wallet types:
+ *   BANK       — each bank account is a separate wallet
+ *   CASH       — physical cash in hand (front desk, etc.)
+ *   PETTY_CASH — small discretionary cash fund
+ *   INVESTMENT — placeholder balance for investment positions
+ *
+ * currentBalance is the single source of truth but is READ-ONLY
+ * from application code. Only the service layer may write to it.
  */
 
-import mongoose, { Schema, Document, Model, Types } from 'mongoose';
+import mongoose, { Schema, Document, Model } from 'mongoose';
 
-// ─── TypeScript Interfaces ────────────────────────────────────────────────────
+export type WalletType = 'BANK' | 'CASH' | 'PETTY_CASH' | 'INVESTMENT';
 
-/** The kinds of storage a wallet can represent */
-export type WalletType = 'BANK' | 'CASH' | 'INVESTMENT';
-
-/** Shape of a Wallet document returned from MongoDB */
 export interface IWallet extends Document {
-    /** Friendly name shown throughout the UI */
     name: string;
-    /** Physical/digital nature of this wallet */
     type: WalletType;
-    /**
-     * Running balance maintained by the Transaction pre-save hook.
-     * Read this field; never write it directly from application code.
-     */
+    /** Maintained exclusively by FinanceTransactionService. NEVER write directly. */
     currentBalance: number;
-    /** ISO 4217 currency code. Default: PKR */
     currency: string;
-    /** Soft-delete flag — inactive wallets are hidden from new entries */
     isActive: boolean;
+    description?: string;
     createdAt: Date;
     updatedAt: Date;
-    /** Virtual: balance as a human-readable string e.g. "PKR 12,500.00" */
-    formattedBalance: string;
 }
-
-/** Static method typings on the Wallet model */
-interface IWalletModel extends Model<IWallet> {
-    /**
-     * Safely retrieve only the current balance of a wallet by its ID.
-     * Returns `null` if the wallet does not exist.
-     *
-     * @param walletId - The ObjectId of the wallet to query
-     */
-    getBalance(walletId: Types.ObjectId | string): Promise<number | null>;
-}
-
-// ─── Schema ───────────────────────────────────────────────────────────────────
 
 const WalletSchema = new Schema<IWallet>(
     {
@@ -66,8 +45,8 @@ const WalletSchema = new Schema<IWallet>(
             type: String,
             required: [true, 'Wallet type is required.'],
             enum: {
-                values: ['BANK', 'CASH', 'INVESTMENT'],
-                message: 'Wallet type must be BANK, CASH, or INVESTMENT.',
+                values: ['BANK', 'CASH', 'PETTY_CASH', 'INVESTMENT'],
+                message: 'Wallet type must be BANK, CASH, PETTY_CASH, or INVESTMENT.',
             },
         },
         currentBalance: {
@@ -86,52 +65,24 @@ const WalletSchema = new Schema<IWallet>(
             type: Boolean,
             default: true,
         },
+        description: {
+            type: String,
+            trim: true,
+            maxlength: 300,
+        },
     },
     {
         timestamps: true,
         collection: 'finance_wallets',
-        // Expose virtuals when converting to JSON (for API responses)
-        toJSON: { virtuals: true },
-        toObject: { virtuals: true },
+        optimisticConcurrency: true,
     }
 );
-
-// ─── Virtuals ─────────────────────────────────────────────────────────────────
-
-/**
- * formattedBalance
- * Returns the balance as a locale-formatted string, e.g. "PKR 12,500.00".
- * Useful for display in UI components without extra formatting logic.
- */
-WalletSchema.virtual('formattedBalance').get(function (this: IWallet) {
-    return `${this.currency} ${this.currentBalance.toLocaleString('en-PK', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    })}`;
-});
-
-// ─── Static Methods ───────────────────────────────────────────────────────────
-
-/**
- * getBalance — fetch only the currentBalance of a single wallet.
- * Safer than loading the full document when you only need the number.
- */
-WalletSchema.statics.getBalance = async function (
-    walletId: Types.ObjectId | string
-): Promise<number | null> {
-    const doc = await this.findById(walletId).select('currentBalance').lean();
-    return doc ? (doc as { currentBalance: number }).currentBalance : null;
-};
-
-// ─── Indexes ──────────────────────────────────────────────────────────────────
 
 WalletSchema.index({ type: 1 });
 WalletSchema.index({ isActive: 1 });
 
-// ─── Model Export ─────────────────────────────────────────────────────────────
-
-const Wallet: IWalletModel =
-    (mongoose.models.Wallet as IWalletModel) ||
-    mongoose.model<IWallet, IWalletModel>('Wallet', WalletSchema);
+const Wallet: Model<IWallet> =
+    (mongoose.models.Wallet as Model<IWallet>) ||
+    mongoose.model<IWallet>('Wallet', WalletSchema);
 
 export default Wallet;

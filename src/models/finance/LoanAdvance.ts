@@ -3,7 +3,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 export type LoanStatus = 'ACTIVE' | 'REPAID' | 'WRITTEN_OFF';
 
 export interface ILoanAdvance extends Document {
-    employee: Types.ObjectId;
+    staffId: Types.ObjectId;
     loanNumber: string;         // LOAN-2025-001
     loanType: 'LOAN' | 'ADVANCE';
     amount: number;
@@ -12,18 +12,18 @@ export interface ILoanAdvance extends Document {
     remainingBalance: number;
     totalRepaid: number;
     status: LoanStatus;
-    journalEntry?: Types.ObjectId; // Disbursement JE
-    assetAccountCode: string;    // CoA: Employee Loans Receivable
+    transactionId?: Types.ObjectId; // Vault Disbursement Transaction
+    walletId?: Types.ObjectId; // Which wallet gave the loan
     notes?: string;
-    approvedBy: string;
-    createdBy: string;
+    approvedBy?: string;
+    createdBy?: string;
     createdAt: Date;
     updatedAt: Date;
 }
 
 const LoanAdvanceSchema = new Schema<ILoanAdvance>(
     {
-        employee: { type: Schema.Types.ObjectId, ref: 'Employee', required: true },
+        staffId: { type: Schema.Types.ObjectId, ref: 'UniversityStaff', required: true },
         loanNumber: { type: String, unique: true, trim: true },
         loanType: { type: String, enum: ['LOAN', 'ADVANCE'], required: true },
         amount: { type: Number, required: true, min: 0 },
@@ -32,16 +32,16 @@ const LoanAdvanceSchema = new Schema<ILoanAdvance>(
         remainingBalance: { type: Number, required: true },
         totalRepaid: { type: Number, default: 0 },
         status: { type: String, enum: ['ACTIVE', 'REPAID', 'WRITTEN_OFF'], default: 'ACTIVE' },
-        journalEntry: { type: Schema.Types.ObjectId, ref: 'JournalEntry' },
-        assetAccountCode: { type: String, required: true },
+        transactionId: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+        walletId: { type: Schema.Types.ObjectId, ref: 'Wallet' },
         notes: { type: String },
-        approvedBy: { type: String, required: true },
-        createdBy: { type: String, required: true },
+        approvedBy: { type: String },
+        createdBy: { type: String },
     },
     { timestamps: true }
 );
 
-LoanAdvanceSchema.index({ employee: 1 });
+LoanAdvanceSchema.index({ staffId: 1 });
 LoanAdvanceSchema.index({ status: 1 });
 
 const LoanAdvance =

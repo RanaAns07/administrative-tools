@@ -1,106 +1,81 @@
 /**
  * @file Transaction.ts
- * @description Khatta Engine — Transaction Model
+ * @description Khatta Engine — Financial Transaction Record (Pure Data Model)
  *
- * This is the single source of truth for ALL money movement in the system.
- * Every rupee that enters, leaves, or moves between wallets has a record here.
+ * ARCHITECTURE RULE: This model has ZERO side effects.
+ * No pre('save') hooks. No wallet balance mutations. No middleware logic.
  *
- * The pre-save hook is the engine room: it automatically adjusts
- * `Wallet.currentBalance` on every save. This means API routes never
- * need to touch wallet balances directly — they just create/update Transactions.
+ * Every transaction record is immutable once created.
+ * Reversals are recorded as new transactions, not edits to existing ones.
  *
- * Transaction Types:
- *   IN       → Money received into a wallet (e.g. student fee payment)
- *   OUT      → Money paid out of a wallet (e.g. salary disbursement)
- *   TRANSFER → Money moved between two internal wallets (e.g. bank → petty cash)
+ * All balance changes happen exclusively in FinanceTransactionService
+ * using MongoDB $inc inside client sessions.
+ *
+ * Transaction Types (LOCKED — use transactionTypes.ts enum only):
+ *
+ *   INFLOWS (wallet balance increases):
+ *     FEE_PAYMENT        — student fee receipt
+ *     SECURITY_DEPOSIT   — refundable deposit
+ *     INVESTMENT_RETURN  — investment maturity
+ *
+ *   OUTFLOWS (wallet balance decreases):
+ *     EXPENSE_PAYMENT    — operational expense
+ *     PAYROLL_PAYMENT    — salary disbursement
+ *     REFUND             — money returned to student
+ *     INVESTMENT_OUTFLOW — capital placed in investment
+ *
+ *   TRANSFERS (internal, no net effect):
+ *     WALLET_TRANSFER_OUT — debit side
+ *     WALLET_TRANSFER_IN  — credit side (linked to OUT via linkedTxId)
  */
 
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
-import Wallet from './Wallet';
+import { ALL_TX_TYPES, FinanceTxType } from '@/lib/finance/transactionTypes';
 
-// ─── TypeScript Interfaces ────────────────────────────────────────────────────
-
-/** Direction of money movement */
-export type TransactionType = 'IN' | 'OUT' | 'TRANSFER';
-
-/**
- * Links this transaction back to the source record in another module.
- * Keeps finance self-contained without circular model dependencies.
- */
-export type ReferenceType =
-    | 'FEE_INVOICE'     // Tied to a student FeeInvoice document
-    | 'PAYROLL_SLIP'    // Tied to a SalarySlip disbursement
-    | 'VENDOR_BILL'     // Tied to a VendorInvoice
-    | 'EXPENSE_RECORD'  // Tied to an ExpenseRecord
-    | 'MANUAL';         // Ad-hoc entry by a front-desk clerk
-
-/** Shape of a Transaction document returned from MongoDB */
 export interface ITransaction extends Document {
-    /**
-     * Amount in the wallet's base currency (e.g. PKR).
-     * Must be a positive number greater than zero.
-     */
+    /** Transaction sub-type (from locked enum) */
+    txType: FinanceTxType;
+    /** Amount in PKR. Always positive. */
     amount: number;
-
-    /** Direction of the money movement */
-    type: TransactionType;
-
-    /** Effective date of the transaction (defaults to time of creation) */
+    /** Effective date of the transaction */
     date: Date;
-
-    /**
-     * The wallet money is coming FROM (for IN/OUT) or
-     * the source wallet (for TRANSFER).
-     */
+    /** The wallet this transaction affects */
     walletId: Types.ObjectId;
-
     /**
-     * Destination wallet for TRANSFER transactions.
-     * Required when type === 'TRANSFER'; must be different from walletId.
+     * For WALLET_TRANSFER_OUT/IN pairs: links to the counterpart transaction.
+     * OUT links → IN._id; IN links → OUT._id (set after both are created).
      */
-    toWalletId?: Types.ObjectId;
-
-    /**
-     * Category tag (e.g. 'Tuition Fee', 'Utility Bill').
-     * Required for IN and OUT. Not applicable for TRANSFER.
-     */
-    categoryId?: Types.ObjectId;
-
-    /** Which module/document type this transaction originates from */
-    referenceType?: ReferenceType;
-
-    /**
-     * The ID of the specific source document (e.g. the FeeInvoice _id).
-     * Stored as a string so it works for both ObjectIds and external references.
-     */
+    linkedTxId?: Types.ObjectId;
+    /** The source document model name (e.g. 'FeeInvoice', 'SalarySlip') */
+    referenceModel?: string;
+    /** The source document's _id as a string */
     referenceId?: string;
-
-    /** Free-text remark left by the clerk at the time of entry */
+    /** Free-text note from the finance officer */
     notes?: string;
-
-    /** The user (clerk/admin) who recorded this transaction */
+    /** The system user who initiated this transaction */
     performedBy: Types.ObjectId;
-
+    /** Indicates if this transaction has been fully reversed */
+    isReversed?: boolean;
+    /** The ID of the transaction that reversed this one */
+    reversedByTxId?: Types.ObjectId;
     createdAt: Date;
     updatedAt: Date;
 }
 
-// ─── Schema ───────────────────────────────────────────────────────────────────
-
 const TransactionSchema = new Schema<ITransaction>(
     {
+        txType: {
+            type: String,
+            required: [true, 'Transaction type (txType) is required.'],
+            enum: {
+                values: ALL_TX_TYPES as unknown as string[],
+                message: 'txType must be one of the permitted FinanceTxType values.',
+            },
+        },
         amount: {
             type: Number,
             required: [true, 'Transaction amount is required.'],
             min: [0.01, 'Amount must be greater than zero.'],
-        },
-        type: {
-            type: String,
-            required: [true, 'Transaction type (IN, OUT, or TRANSFER) is required.'],
-            enum: {
-                values: ['IN', 'OUT', 'TRANSFER'],
-                message: 'Transaction type must be IN, OUT, or TRANSFER.',
-            },
         },
         date: {
             type: Date,
@@ -109,25 +84,17 @@ const TransactionSchema = new Schema<ITransaction>(
         walletId: {
             type: Schema.Types.ObjectId,
             ref: 'Wallet',
-            required: [true, 'A source wallet (walletId) is required.'],
+            required: [true, 'A wallet reference (walletId) is required.'],
         },
-        toWalletId: {
+        linkedTxId: {
             type: Schema.Types.ObjectId,
-            ref: 'Wallet',
+            ref: 'Transaction',
             default: null,
         },
-        categoryId: {
-            type: Schema.Types.ObjectId,
-            ref: 'Category',
-            default: null,
-        },
-        referenceType: {
+        referenceModel: {
             type: String,
-            enum: {
-                values: ['FEE_INVOICE', 'PAYROLL_SLIP', 'VENDOR_BILL', 'MANUAL'],
-                message: 'Invalid referenceType value.',
-            },
-            default: 'MANUAL',
+            trim: true,
+            default: null,
         },
         referenceId: {
             type: String,
@@ -144,6 +111,15 @@ const TransactionSchema = new Schema<ITransaction>(
             ref: 'User',
             required: [true, 'performedBy (the recording user) is required.'],
         },
+        isReversed: {
+            type: Boolean,
+            default: false,
+        },
+        reversedByTxId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Transaction',
+            default: null,
+        },
     },
     {
         timestamps: true,
@@ -151,132 +127,20 @@ const TransactionSchema = new Schema<ITransaction>(
     }
 );
 
-// ─── Validation ───────────────────────────────────────────────────────────────
-
-/**
- * Cross-field validation:
- *   - TRANSFER must have a toWalletId that differs from walletId.
- *   - IN / OUT must have a categoryId.
- */
-TransactionSchema.pre('validate', function () {
-    if (this.type === 'TRANSFER') {
-        if (!this.toWalletId) {
-            throw new Error('TRANSFER transactions require a destination wallet (toWalletId).');
-        }
-        if (this.walletId.toString() === this.toWalletId.toString()) {
-            throw new Error('Source and destination wallets must be different for a TRANSFER.');
-        }
-    }
-
-    if ((this.type === 'IN' || this.type === 'OUT') && !this.categoryId) {
-        throw new Error('A categoryId is required for IN and OUT transactions.');
-    }
-});
-
-// ─── Pre-Save Hook: Wallet Balance Engine ────────────────────────────────────
-
-/**
- * Automatically updates Wallet.currentBalance whenever a Transaction is saved.
- *
- * NEW transaction:
- *   IN       → source wallet balance += amount
- *   OUT      → source wallet balance -= amount
- *   TRANSFER → source wallet balance -= amount; dest wallet balance += amount
- *
- * UPDATED transaction (amount or type changed):
- *   First REVERSES the effect of the previous values, then APPLIES the new ones.
- *   This keeps balances accurate even when clerks correct mistakes.
- *
- * Note: We use `findByIdAndUpdate` with `$inc` for atomicity — this avoids
- * race conditions if two transactions are saved at the same time.
- */
-TransactionSchema.pre('save', async function () {
-    try {
-        if (this.isNew) {
-            // ── Brand-new transaction ──────────────────────────────────────────────
-
-            if (this.type === 'IN') {
-                await Wallet.findByIdAndUpdate(this.walletId, {
-                    $inc: { currentBalance: this.amount },
-                });
-            } else if (this.type === 'OUT') {
-                await Wallet.findByIdAndUpdate(this.walletId, {
-                    $inc: { currentBalance: -this.amount },
-                });
-            } else if (this.type === 'TRANSFER' && this.toWalletId) {
-                // Subtract from source, add to destination
-                await Wallet.findByIdAndUpdate(this.walletId, {
-                    $inc: { currentBalance: -this.amount },
-                });
-                await Wallet.findByIdAndUpdate(this.toWalletId, {
-                    $inc: { currentBalance: this.amount },
-                });
-            }
-        } else {
-            // ── Existing transaction being edited ─────────────────────────────────
-            // Fetch the original values before this save was called
-            const original = await (this.constructor as Model<ITransaction>)
-                .findById(this._id)
-                .lean();
-
-            if (original) {
-                const prev = original as ITransaction;
-
-                // Step 1: Reverse the old transaction's effect on wallet(s)
-                if (prev.type === 'IN') {
-                    await Wallet.findByIdAndUpdate(prev.walletId, {
-                        $inc: { currentBalance: -prev.amount },
-                    });
-                } else if (prev.type === 'OUT') {
-                    await Wallet.findByIdAndUpdate(prev.walletId, {
-                        $inc: { currentBalance: prev.amount },
-                    });
-                } else if (prev.type === 'TRANSFER' && prev.toWalletId) {
-                    await Wallet.findByIdAndUpdate(prev.walletId, {
-                        $inc: { currentBalance: prev.amount },
-                    });
-                    await Wallet.findByIdAndUpdate(prev.toWalletId, {
-                        $inc: { currentBalance: -prev.amount },
-                    });
-                }
-
-                // Step 2: Apply the new transaction's effect on wallet(s)
-                if (this.type === 'IN') {
-                    await Wallet.findByIdAndUpdate(this.walletId, {
-                        $inc: { currentBalance: this.amount },
-                    });
-                } else if (this.type === 'OUT') {
-                    await Wallet.findByIdAndUpdate(this.walletId, {
-                        $inc: { currentBalance: -this.amount },
-                    });
-                } else if (this.type === 'TRANSFER' && this.toWalletId) {
-                    await Wallet.findByIdAndUpdate(this.walletId, {
-                        $inc: { currentBalance: -this.amount },
-                    });
-                    await Wallet.findByIdAndUpdate(this.toWalletId, {
-                        $inc: { currentBalance: this.amount },
-                    });
-                }
-            }
-        }
-
-    } catch (err) {
-        throw err;
-    }
-});
-
 // ─── Indexes ──────────────────────────────────────────────────────────────────
 
-// Most common query: all transactions for a given wallet, newest first
+// Primary query: all transactions for a wallet, newest first
 TransactionSchema.index({ walletId: 1, date: -1 });
-// Filter by type (e.g. show only OUTs for expense reports)
-TransactionSchema.index({ type: 1 });
-// Look up by source document (e.g. all transactions for a FeeInvoice)
-TransactionSchema.index({ referenceType: 1, referenceId: 1 });
-// Audit trail: which transactions did a specific clerk make?
+// Filter by type for reports
+TransactionSchema.index({ txType: 1 });
+// Look up by source document
+TransactionSchema.index({ referenceModel: 1, referenceId: 1 });
+// Audit trail: which transactions did a specific user make?
 TransactionSchema.index({ performedBy: 1 });
 // Date-range queries for period reports
 TransactionSchema.index({ date: -1 });
+// Transfer pair lookup
+TransactionSchema.index({ linkedTxId: 1 });
 
 // ─── Model Export ─────────────────────────────────────────────────────────────
 

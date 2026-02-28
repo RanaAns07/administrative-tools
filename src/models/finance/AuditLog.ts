@@ -6,7 +6,20 @@ export type AuditAction =
     | 'LOCK_PERIOD' | 'CLOSE_FISCAL_YEAR'
     | 'PROCESS_PAYROLL' | 'RUN_DEPRECIATION'
     | 'PAYMENT_RECEIVED' | 'REFUND_ISSUED'
-    | 'CANCEL';
+    | 'CANCEL'
+    // ── Khatta v2 finance actions ──
+    | 'FEE_PAYMENT_RECORDED'
+    | 'EXPENSE_RECORDED'
+    | 'PAYROLL_DISBURSED'
+    | 'WALLET_TRANSFER'
+    | 'SCHOLARSHIP_GRANTED'
+    | 'PERIOD_LOCKED'
+    | 'PERIOD_UNLOCKED'
+    | 'INVESTMENT_CREATED'
+    | 'INVESTMENT_RETURNED'
+    | 'SECURITY_DEPOSIT_RECORDED'
+    | `PERIOD_LOCKED`
+    | `PERIOD_UNLOCKED`;
 
 export interface IAuditLog extends Document {
     action: AuditAction;
@@ -35,6 +48,12 @@ const AuditLogSchema = new Schema<IAuditLog>(
                 'LOCK_PERIOD', 'CLOSE_FISCAL_YEAR',
                 'PROCESS_PAYROLL', 'RUN_DEPRECIATION',
                 'PAYMENT_RECEIVED', 'REFUND_ISSUED', 'CANCEL',
+                // Khatta v2 finance actions
+                'FEE_PAYMENT_RECORDED', 'EXPENSE_RECORDED',
+                'PAYROLL_DISBURSED', 'WALLET_TRANSFER',
+                'SCHOLARSHIP_GRANTED', 'PERIOD_LOCKED',
+                'PERIOD_UNLOCKED', 'INVESTMENT_CREATED',
+                'INVESTMENT_RETURNED', 'SECURITY_DEPOSIT_RECORDED'
             ],
         },
         entityType: { type: String, required: true },

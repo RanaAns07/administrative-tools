@@ -4,6 +4,32 @@ import dbConnect from '@/lib/mongodb';
 import StudentProfile from '@/models/university/StudentProfile';
 import { writeAuditLog } from '@/lib/finance-utils';
 
+export async function GET(req: Request) {
+    try {
+        const session = await getServerSession();
+        if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        await dbConnect();
+        const { searchParams } = new URL(req.url);
+        const search = searchParams.get('search');
+
+        let query = {};
+        if (search) {
+            query = {
+                $or: [
+                    { name: { $regex: search, $options: 'i' } },
+                    { registrationNumber: { $regex: search, $options: 'i' } }
+                ]
+            };
+        }
+
+        const students = await StudentProfile.find(query).sort({ registrationNumber: 1 }).limit(10).lean();
+        return NextResponse.json(students);
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
 export async function POST(req: Request) {
     try {
         const session = await getServerSession();
@@ -29,7 +55,6 @@ export async function POST(req: Request) {
             batchId,
             currentSemester: Number(currentSemester) || 1,
             status: 'ACTIVE',
-            isActive: true,
         });
 
         await writeAuditLog({

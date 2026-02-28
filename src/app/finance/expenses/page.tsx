@@ -5,6 +5,8 @@ import Wallet from '@/models/finance/Wallet';
 import Category from '@/models/finance/Category';
 import { Receipt, Plus, ArrowDownRight } from 'lucide-react';
 import ExpenseModal from './ExpenseModal';
+import Pagination from '../_components/Pagination';
+import RoleGuard from '../_components/RoleGuard';
 
 function formatPKR(n: number) {
     return new Intl.NumberFormat('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -14,46 +16,54 @@ function formatDate(d: string) {
     return new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-async function getExpenses() {
+export default async function ExpensesPage({ searchParams }: { searchParams: { [key: string]: string | string[] | undefined } }) {
     await dbConnect();
-    const expenses = await ExpenseRecord
+
+    // Summary totals (ignores pagination to show full financial picture)
+    const allExpenses = await ExpenseRecord.find({}).lean();
+    const totalSpent = allExpenses.reduce((s: number, e: any) => s + (e.amount || 0), 0);
+
+    // Dependencies
+    const wallets = await Wallet.find({ isActive: true }).lean();
+    const categories = await Category.find({ type: 'EXPENSE', isActive: true }).lean();
+
+    // Pagination
+    const page = typeof searchParams.page === 'string' ? parseInt(searchParams.page) : 1;
+    const limit = 50;
+    const totalCount = await ExpenseRecord.countDocuments({});
+    const totalPages = Math.ceil(totalCount / limit);
+
+    const rawExpenses = await ExpenseRecord
         .find({})
         .sort({ date: -1 })
-        .limit(100)
+        .skip((page - 1) * limit)
+        .limit(limit)
         .populate('categoryId', 'name')
         .populate('walletId', 'name type')
         .populate('recordedBy', 'name email')
         .lean();
-    return JSON.parse(JSON.stringify(expenses));
-}
-
-export default async function ExpensesPage() {
-    const expenses = await getExpenses();
-
-    // Fetch dependencies for the expense form
-    const wallets = await Wallet.find({ isActive: true }).lean();
-    const categories = await Category.find({ type: 'EXPENSE', isActive: true }).lean();
-
-    const totalSpent = expenses.reduce((s: number, e: any) => s + (e.amount || 0), 0);
+    const expenses = JSON.parse(JSON.stringify(rawExpenses));
 
     return (
-        <div className="space-y-6 max-w-[1100px]">
+        <div className="space-y-6 max-w-[1100px] flex flex-col min-h-full">
 
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                     <span className="text-xs font-semibold text-leads-blue uppercase tracking-widest">Money Out</span>
                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight mt-0.5">Expenses</h1>
-                    <p className="text-sm text-gray-400">{expenses.length} record{expenses.length !== 1 ? 's' : ''} · PKR {formatPKR(totalSpent)} total</p>
+                    <p className="text-sm text-gray-400">{totalCount} record{totalCount !== 1 ? 's' : ''} · PKR {formatPKR(totalSpent)} total</p>
                 </div>
-                <ExpenseModal
-                    wallets={JSON.parse(JSON.stringify(wallets))}
-                    categories={JSON.parse(JSON.stringify(categories))}
-                />
+                <RoleGuard>
+                    <ExpenseModal
+                        wallets={JSON.parse(JSON.stringify(wallets))}
+                        categories={JSON.parse(JSON.stringify(categories))}
+                    />
+                </RoleGuard>
             </div>
 
             {/* Total spent card */}
-            {expenses.length > 0 && (
+            {totalCount > 0 && (
                 <div className="bg-rose-50 border border-rose-100 rounded-2xl p-5 flex items-center gap-4">
                     <div className="p-3 bg-rose-100 text-rose-600 rounded-xl">
                         <ArrowDownRight size={24} />
@@ -66,29 +76,31 @@ export default async function ExpensesPage() {
             )}
 
             {/* Table */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden border-b-0">
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                     <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
                         <Receipt size={15} className="text-gray-400" />
                         Expense Records
                     </h2>
-                    <span className="text-xs text-gray-400">{expenses.length} entries</span>
+                    <span className="text-xs text-gray-400">{totalCount} entries</span>
                 </div>
 
                 {expenses.length === 0 ? (
-                    <div className="py-20 text-center">
+                    <div className="py-20 text-center border-b border-gray-100">
                         <Receipt size={36} className="text-gray-200 mx-auto mb-3" />
                         <p className="text-gray-500 font-medium">No expenses recorded</p>
                         <p className="text-sm text-gray-400 mt-1">Use the button above to record your first expense.</p>
                         <div className="mt-4">
-                            <ExpenseModal
-                                wallets={JSON.parse(JSON.stringify(wallets))}
-                                categories={JSON.parse(JSON.stringify(categories))}
-                            />
+                            <RoleGuard>
+                                <ExpenseModal
+                                    wallets={JSON.parse(JSON.stringify(wallets))}
+                                    categories={JSON.parse(JSON.stringify(categories))}
+                                />
+                            </RoleGuard>
                         </div>
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto border-b border-gray-100">
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="bg-gray-50 border-b border-gray-100">
@@ -152,6 +164,7 @@ export default async function ExpensesPage() {
                     </div>
                 )}
             </div>
+            <Pagination currentPage={page} totalPages={totalPages} totalCount={totalCount} />
         </div>
     );
 }

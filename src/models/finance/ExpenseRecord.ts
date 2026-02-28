@@ -25,34 +25,23 @@ import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 // ─── TypeScript Interface ─────────────────────────────────────────────────────
 
 export interface IExpenseRecord extends Document {
-    /**
-     * Short, human-readable description shown in reports and dashboards.
-     * e.g. 'March Electricity Bill', 'Whiteboard Markers × 24'
-     */
     title: string;
-    /**
-     * Category must be of type 'EXPENSE'.
-     * Validated in the API route, not at the schema level, to keep the
-     * model decoupled and avoid an async validator here.
-     */
     categoryId: Types.ObjectId;
-    /** Amount in PKR (or wallet base currency) */
     amount: number;
-    /** The wallet money was paid FROM */
     walletId: Types.ObjectId;
-    /**
-     * Optional URL to the receipt image or PDF stored in S3 / Cloudinary.
-     * Enables a paperless audit trail.
-     */
+    vendorId?: Types.ObjectId;
+    department?: string;
     receiptUrl?: string;
-    /** Effective date of the expense */
     date: Date;
-    /** Optional free-text notes for additional context */
     notes?: string;
-    /** The user (clerk/admin) who entered this expense */
     recordedBy: Types.ObjectId;
-    /** Backref to the Transaction created automatically during POST */
     transactionId?: Types.ObjectId;
+    /** Links to a RecurringExpense template if auto-generated */
+    recurringTemplateId?: Types.ObjectId;
+    /** Month this recurring expense was generated for (dedup key) */
+    generatedForMonth?: number;
+    /** Year this recurring expense was generated for (dedup key) */
+    generatedForYear?: number;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -82,28 +71,28 @@ const ExpenseRecordSchema = new Schema<IExpenseRecord>(
             ref: 'Wallet',
             required: [true, 'Wallet reference (walletId) is required.'],
         },
-        receiptUrl: {
+        vendorId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Vendor',
+            default: null,
+        },
+        department: {
             type: String,
             trim: true,
+            maxlength: [150, 'Department name must not exceed 150 characters.'],
         },
-        date: {
-            type: Date,
-            default: Date.now,
-        },
-        notes: {
-            type: String,
-            trim: true,
-            maxlength: [2000, 'Notes must not exceed 2000 characters.'],
-        },
+        receiptUrl: { type: String, trim: true },
+        date: { type: Date, default: Date.now },
+        notes: { type: String, trim: true, maxlength: [2000, 'Notes must not exceed 2000 characters.'] },
         recordedBy: {
             type: Schema.Types.ObjectId,
             ref: 'User',
             required: [true, 'recordedBy (User reference) is required.'],
         },
-        transactionId: {
-            type: Schema.Types.ObjectId,
-            ref: 'Transaction',
-        },
+        transactionId: { type: Schema.Types.ObjectId, ref: 'Transaction' },
+        recurringTemplateId: { type: Schema.Types.ObjectId, ref: 'RecurringExpense', default: null },
+        generatedForMonth: { type: Number, min: 1, max: 12 },
+        generatedForYear: { type: Number },
     },
     {
         timestamps: true,
@@ -113,14 +102,17 @@ const ExpenseRecordSchema = new Schema<IExpenseRecord>(
 
 // ─── Indexes ──────────────────────────────────────────────────────────────────
 
-// Most common dashboard query: all expenses by date descending
 ExpenseRecordSchema.index({ date: -1 });
-// Category breakdown reports
 ExpenseRecordSchema.index({ categoryId: 1 });
-// Wallet-level spending view
 ExpenseRecordSchema.index({ walletId: 1 });
-// Audit trail by recorder
 ExpenseRecordSchema.index({ recordedBy: 1 });
+ExpenseRecordSchema.index({ department: 1 });
+ExpenseRecordSchema.index({ vendorId: 1 });
+// Prevent double-generation of the same recurring expense
+ExpenseRecordSchema.index(
+    { recurringTemplateId: 1, generatedForMonth: 1, generatedForYear: 1 },
+    { unique: true, sparse: true }  // sparse: ignore docs where recurringTemplateId is null
+);
 
 // ─── Model Export ─────────────────────────────────────────────────────────────
 

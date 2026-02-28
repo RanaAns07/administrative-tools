@@ -3,12 +3,24 @@ import { NextResponse } from "next/server";
 
 export default withAuth(
     function middleware(req) {
-        if (req.nextauth.token?.role === 'SuperAdmin') {
+        const token = req.nextauth.token;
+        if (!token) return NextResponse.rewrite(new URL('/login', req.url));
+
+        if (token.role === 'SuperAdmin') {
             return NextResponse.next();
         }
 
-        if (req.nextUrl.pathname.startsWith('/admin') && req.nextauth.token?.role !== 'Admin') {
+        const pathname = req.nextUrl.pathname;
+
+        if (pathname.startsWith('/admin') && token.role !== 'Admin') {
             return NextResponse.rewrite(new URL('/unauthorized', req.url));
+        }
+
+        if (pathname.startsWith('/finance')) {
+            const permissions: any = token.permissions || {};
+            if (token.role !== 'Admin' && !permissions?.finance?.hasAccess) {
+                return NextResponse.rewrite(new URL('/unauthorized', req.url));
+            }
         }
     },
     {

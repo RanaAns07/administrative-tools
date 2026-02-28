@@ -6,6 +6,7 @@ import {
     CircleDot, ArrowUpRight,
 } from 'lucide-react';
 import CreateWalletModal from './CreateWalletModal';
+import Pagination from '../_components/Pagination';
 
 const TYPE_META: Record<string, { label: string; icon: typeof Landmark; color: string; bg: string; ring: string }> = {
     BANK: { label: 'Bank Account', icon: Landmark, color: 'text-indigo-600', bg: 'bg-indigo-50', ring: 'ring-indigo-100' },
@@ -17,23 +18,32 @@ function formatPKR(n: number) {
     return new Intl.NumberFormat('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
 
-async function getWallets() {
+export default async function WalletsPage({ searchParams }: { searchParams: { [key: string]: string | string[] | undefined } }) {
     await dbConnect();
-    const wallets = await Wallet.find({ isActive: true }).sort({ type: 1, name: 1 }).lean();
-    return JSON.parse(JSON.stringify(wallets));
-}
 
-export default async function WalletsPage() {
-    const wallets = await getWallets();
-
-    const totalBalance = wallets.reduce((s: number, w: any) => s + (w.currentBalance || 0), 0);
-    const byType = wallets.reduce((acc: Record<string, number>, w: any) => {
+    // Summary totals (ignores pagination to show full financial picture)
+    const allActive = await Wallet.find({ isActive: true }).lean();
+    const totalBalance = allActive.reduce((s: number, w: any) => s + (w.currentBalance || 0), 0);
+    const byType = allActive.reduce((acc: Record<string, number>, w: any) => {
         acc[w.type] = (acc[w.type] || 0) + w.currentBalance;
         return acc;
     }, {});
 
+    // Pagination
+    const page = typeof searchParams.page === 'string' ? parseInt(searchParams.page) : 1;
+    const limit = 50;
+    const totalCount = await Wallet.countDocuments({ isActive: true });
+    const totalPages = Math.ceil(totalCount / limit);
+
+    const rawWallets = await Wallet.find({ isActive: true })
+        .sort({ type: 1, name: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean();
+    const wallets = JSON.parse(JSON.stringify(rawWallets));
+
     return (
-        <div className="space-y-6 max-w-[1200px]">
+        <div className="space-y-6 max-w-[1200px] flex flex-col min-h-full">
 
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -42,7 +52,7 @@ export default async function WalletsPage() {
                         <span className="text-xs font-semibold text-leads-blue uppercase tracking-widest">Money Management</span>
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Wallets</h1>
-                    <p className="text-sm text-gray-400 mt-0.5">{wallets.length} active wallet{wallets.length !== 1 ? 's' : ''}</p>
+                    <p className="text-sm text-gray-400 mt-0.5">{totalCount} active wallet{totalCount !== 1 ? 's' : ''}</p>
                 </div>
                 <CreateWalletModal />
             </div>
@@ -70,7 +80,7 @@ export default async function WalletsPage() {
             {wallets.length === 0 ? (
                 <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
                     <WalletIcon size={36} className="text-gray-200 mx-auto mb-3" />
-                    <p className="text-gray-500 font-medium">No wallets yet</p>
+                    <p className="text-gray-500 font-medium">No wallets found</p>
                     <p className="text-sm text-gray-400 mt-1">Create a wallet to start tracking money movement.</p>
                 </div>
             ) : (
@@ -121,6 +131,7 @@ export default async function WalletsPage() {
                     })}
                 </div>
             )}
+            <Pagination currentPage={page} totalPages={totalPages} totalCount={totalCount} />
         </div>
     );
 }

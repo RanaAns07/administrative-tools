@@ -25,6 +25,8 @@ interface AnalyticsData {
     outflowByCategory: Array<{ _id: string; categoryName: string; total: number; count: number }>;
     recentTransactions: Array<{ _id: string; amount: number; type: string; date: string; notes?: string; referenceType?: string; walletName: string; categoryName?: string }>;
     feeAging: Array<{ _id: string; amount: number; count: number }>;
+    accountsReceivable: { total: number; count: number };
+    advancesOut: { total: number };
     period: { month: string; year: number };
     generatedAt: string;
 }

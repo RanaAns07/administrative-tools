@@ -24,24 +24,21 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export type StaffEmploymentType = 'PERMANENT' | 'VISITING' | 'CONTRACT';
 
 export interface IUniversityStaff extends Document {
-    /** Full name on payslip */
     name: string;
-    /** Job title / role e.g. 'Lecturer', 'Lab Technician', 'Security Guard' */
     role: string;
-    /** How the staff member is employed — determines salary calculation method */
+    department: string;
     employmentType: StaffEmploymentType;
-    /**
-     * Monthly fixed salary for PERMANENT and CONTRACT staff.
-     * Defaults to 0 for VISITING faculty (they are paid per credit hour).
-     */
     baseSalary: number;
-    /**
-     * PKR rate per credit hour taught, used for VISITING faculty.
-     * Ignored for PERMANENT/CONTRACT.
-     */
     perCreditHourRate: number;
-    /** Soft-delete — inactive staff cannot receive new salary slips */
     isActive: boolean;
+    cnic?: string;
+    bankAccountNumber?: string;
+    bankName?: string;
+    bankAccountTitle?: string;
+    joiningDate?: Date;
+    ntn?: string;
+    email?: string;
+    phone?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -62,6 +59,12 @@ const UniversityStaffSchema = new Schema<IUniversityStaff>(
             trim: true,
             maxlength: [150, 'Role must not exceed 150 characters.'],
         },
+        department: {
+            type: String,
+            required: [true, 'Department is required.'],
+            trim: true,
+            maxlength: [150, 'Department must not exceed 150 characters.'],
+        },
         employmentType: {
             type: String,
             required: [true, 'Employment type is required.'],
@@ -80,35 +83,21 @@ const UniversityStaffSchema = new Schema<IUniversityStaff>(
             default: 0,
             min: [0, 'Per-credit-hour rate cannot be negative.'],
         },
-        isActive: {
-            type: Boolean,
-            default: true,
-        },
+        isActive: { type: Boolean, default: true },
+        cnic: { type: String, trim: true, sparse: true },
+        bankAccountNumber: { type: String, trim: true },
+        bankName: { type: String, trim: true },
+        bankAccountTitle: { type: String, trim: true },
+        joiningDate: { type: Date },
+        ntn: { type: String, trim: true },
+        email: { type: String, trim: true, lowercase: true },
+        phone: { type: String, trim: true },
     },
     {
         timestamps: true,
         collection: 'university_staff',
     }
 );
-
-// ─── Pre-Save Validation ──────────────────────────────────────────────────────
-
-/**
- * Business rule:
- *   VISITING faculty must have a perCreditHourRate > 0.
- *   PERMANENT/CONTRACT staff must have a baseSalary > 0.
- */
-UniversityStaffSchema.pre('validate', function () {
-    if (this.employmentType === 'VISITING' && this.perCreditHourRate === 0) {
-        throw new Error('VISITING faculty must have a perCreditHourRate greater than 0.');
-    }
-    if (
-        (this.employmentType === 'PERMANENT' || this.employmentType === 'CONTRACT') &&
-        this.baseSalary === 0
-    ) {
-        throw new Error(`${this.employmentType} staff must have a baseSalary greater than 0.`);
-    }
-});
 
 // ─── Indexes ──────────────────────────────────────────────────────────────────
 
