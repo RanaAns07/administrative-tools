@@ -11,6 +11,8 @@ import { writeAuditLog } from '@/lib/finance-utils';
  * List active fee structures.
  * Query params: batchId, semesterNumber
  */
+import '@/models/university/Batch'; // Ensure Batch is registered before populate
+import '@/models/university/Program'; // Ensure Program is registered before populate
 export async function GET(req: Request) {
     try {
         await dbConnect();
