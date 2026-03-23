@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FileSearch, CheckCircle2, AlertTriangle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
@@ -9,7 +9,7 @@ function formatPKR(n: number) {
     return new Intl.NumberFormat('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n) || 0);
 }
 
-export default function ReconciliationClient({ wallets, initialTransactions }: { wallets: any[]; initialTransactions: any[] }) {
+function ReconciliationClientContent({ wallets, initialTransactions }: { wallets: any[]; initialTransactions: any[] }) {
     const router = useRouter();
     const searchParams = useSearchParams();
 
@@ -106,8 +106,8 @@ export default function ReconciliationClient({ wallets, initialTransactions }: {
                         <button
                             disabled={!isReconciled}
                             className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${isReconciled
-                                    ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
-                                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
+                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                 }`}
                         >
                             {isReconciled ? 'Reconciliation Completed' : 'Resolve Difference to Complete'}
@@ -172,5 +172,13 @@ export default function ReconciliationClient({ wallets, initialTransactions }: {
                 )}
             </div>
         </div>
+    );
+}
+
+export default function ReconciliationClient(props: any) {
+    return (
+        <Suspense fallback={<div className="h-64 w-full bg-gray-50 animate-pulse rounded-xl" />}>
+            <ReconciliationClientContent {...props} />
+        </Suspense>
     );
 }

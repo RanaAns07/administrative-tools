@@ -1,5 +1,6 @@
 'use client';
 
+import React, { Suspense } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -9,7 +10,7 @@ interface PaginationProps {
     totalCount: number;
 }
 
-export default function Pagination({ currentPage, totalPages, totalCount }: PaginationProps) {
+function PaginationContent({ currentPage, totalPages, totalCount }: PaginationProps) {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -57,5 +58,13 @@ export default function Pagination({ currentPage, totalPages, totalCount }: Pagi
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function Pagination(props: PaginationProps) {
+    return (
+        <Suspense fallback={<div className="h-14 w-full bg-white border-t border-gray-100 animate-pulse" />}>
+            <PaginationContent {...props} />
+        </Suspense>
     );
 }

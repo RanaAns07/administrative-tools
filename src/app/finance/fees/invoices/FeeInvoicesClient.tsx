@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, Suspense } from 'react';
 import { motion } from 'framer-motion';
 import { Users, Plus, Loader2, X, Check, IndianRupee, Clock, AlertTriangle } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
@@ -22,7 +22,7 @@ const statusColors: Record<string, string> = {
 
 interface FeeStructure { _id: string; programName: string; semester: string; academicYear: string; totalAmount: number; }
 
-export default function FeeInvoicesClient() {
+function FeeInvoicesClientContent() {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -393,5 +393,13 @@ export default function FeeInvoicesClient() {
                 </div>
             )}
         </div>
+    );
+}
+
+export default function FeeInvoicesClient() {
+    return (
+        <Suspense fallback={<div className="h-64 w-full bg-gray-50 animate-pulse rounded-xl" />}>
+            <FeeInvoicesClientContent />
+        </Suspense>
     );
 }

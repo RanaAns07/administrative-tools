@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState } from 'react';
-import { Plus, Search, Loader2, User } from 'lucide-react';
+import { Plus, Search, Loader2, User, Pencil, Trash2 } from 'lucide-react';
 import RoleGuard from '../../_components/RoleGuard';
 
 const DEPTS = ['Administration', 'Computer Science', 'Business', 'Engineering', 'Sciences', 'Social Sciences', 'Finance', 'HR', 'IT'];
@@ -12,6 +12,7 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
     const [employees, setEmployees] = useState<any[]>(initialEmployees);
     const [search, setSearch] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [formData, setFormData] = useState({
@@ -29,6 +30,46 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
 
     const set = (k: string, v: string) => setFormData(f => ({ ...f, [k]: v }));
 
+    const handleAddClick = () => {
+        setEditingEmployeeId(null);
+        setFormData({
+            name: '', cnic: '', role: '', department: '',
+            employmentType: 'PERMANENT', joiningDate: '',
+            email: '', phone: '', baseSalary: '', perCreditHourRate: '', ntn: '',
+            bankName: '', bankAccountNumber: '', bankAccountTitle: '',
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleEditClick = (emp: any) => {
+        setEditingEmployeeId(emp._id);
+        setFormData({
+            name: emp.name || '', cnic: emp.cnic || '', role: emp.role || '', department: emp.department || '',
+            employmentType: emp.employmentType || 'PERMANENT',
+            joiningDate: emp.joiningDate ? new Date(emp.joiningDate).toISOString().split('T')[0] : '',
+            email: emp.email || '', phone: emp.phone || '',
+            baseSalary: emp.baseSalary?.toString() || '',
+            perCreditHourRate: emp.perCreditHourRate?.toString() || '',
+            ntn: emp.ntn || '',
+            bankName: emp.bankName || '', bankAccountNumber: emp.bankAccountNumber || '', bankAccountTitle: emp.bankAccountTitle || '',
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!window.confirm("Are you sure you want to delete this staff member?")) return;
+        try {
+            const res = await fetch(`/api/finance/hr/employees/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to delete staff member');
+            }
+            window.location.reload();
+        } catch (err: any) {
+            alert(err.message);
+        }
+    };
+
     const handleSubmit = async (ev: React.FormEvent) => {
         ev.preventDefault();
         setLoading(true); setError('');
@@ -39,21 +80,17 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
                 perCreditHourRate: parseFloat(formData.perCreditHourRate) || 0
             };
 
-            const res = await fetch('/api/finance/hr/employees', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+            const url = editingEmployeeId ? `/api/finance/hr/employees/${editingEmployeeId}` : '/api/finance/hr/employees';
+            const method = editingEmployeeId ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method, headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to create staff');
+            if (!res.ok) throw new Error(data.error || `Failed to ${editingEmployeeId ? 'update' : 'create'} staff`);
 
-            setEmployees([...employees, data].sort((a, b) => a.name.localeCompare(b.name)));
-            setIsModalOpen(false);
-            setFormData({
-                name: '', cnic: '', role: '', department: '',
-                employmentType: 'PERMANENT', joiningDate: '',
-                email: '', phone: '', baseSalary: '', perCreditHourRate: '', ntn: '',
-                bankName: '', bankAccountNumber: '', bankAccountTitle: '',
-            });
+            window.location.reload();
         } catch (err: any) { setError(err.message); }
         finally { setLoading(false); }
     };
@@ -72,7 +109,7 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
                 <div className="flex items-center gap-3">
                     <span className="text-xs text-gray-500">{filtered.length} staff</span>
                     <RoleGuard>
-                        <button onClick={() => setIsModalOpen(true)}
+                        <button onClick={handleAddClick}
                             className="flex items-center gap-2 bg-leads-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition-colors">
                             <Plus size={16} /> Add Staff
                         </button>
@@ -91,6 +128,7 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
                             <th className="px-6 py-3 text-right">Compensation</th>
                             <th className="px-6 py-3">Joining Date</th>
                             <th className="px-6 py-3">Status</th>
+                            <th className="px-6 py-3 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -132,6 +170,16 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
                                         {emp.isActive ? 'ACTIVE' : 'INACTIVE'}
                                     </span>
                                 </td>
+                                <td className="px-6 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-3 transition-opacity">
+                                        <button onClick={() => handleEditClick(emp)} className="text-blue-600 hover:text-blue-800 transition-colors p-1" title="Edit Staff">
+                                            <Pencil size={18} />
+                                        </button>
+                                        <button onClick={() => handleDelete(emp._id)} className="text-red-600 hover:text-red-800 transition-colors p-1" title="Delete Staff">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -143,7 +191,7 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-                            <h3 className="font-bold text-gray-900">Add New Staff Member</h3>
+                            <h3 className="font-bold text-gray-900">{editingEmployeeId ? 'Edit Staff Member' : 'Add New Staff Member'}</h3>
                             <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                                 <Plus size={20} className="rotate-45" />
                             </button>
@@ -244,8 +292,8 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
                             <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
                                 <button type="submit" disabled={loading} className="px-5 py-2 text-sm font-bold text-white bg-leads-blue hover:bg-blue-800 rounded-lg flex items-center gap-2 disabled:opacity-50">
-                                    {loading ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-                                    Create Staff
+                                    {loading ? <Loader2 size={15} className="animate-spin" /> : (editingEmployeeId ? <Pencil size={15} /> : <Plus size={15} />)}
+                                    {editingEmployeeId ? 'Update Staff' : 'Create Staff'}
                                 </button>
                             </div>
                         </form>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { ArrowUpRight, ArrowDownRight, ArrowRightLeft, Search, Eye } from 'lucide-react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -21,7 +21,7 @@ function formatDate(d: string) {
     return new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export default function TransactionTable({ txns, initialSearch = '', initialType = '' }: { txns: any[], initialSearch?: string, initialType?: string }) {
+function TransactionTableContent({ txns, initialSearch = '', initialType = '' }: { txns: any[], initialSearch?: string, initialType?: string }) {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -165,5 +165,13 @@ export default function TransactionTable({ txns, initialSearch = '', initialType
                 </div>
             )}
         </div>
+    );
+}
+
+export default function TransactionTable(props: any) {
+    return (
+        <Suspense fallback={<div className="h-64 w-full bg-gray-50 animate-pulse rounded-xl" />}>
+            <TransactionTableContent {...props} />
+        </Suspense>
     );
 }

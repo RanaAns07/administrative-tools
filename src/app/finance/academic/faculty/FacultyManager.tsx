@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Loader2, X, CheckCircle2, Users } from 'lucide-react';
+import { Search, Plus, Loader2, X, CheckCircle2, Users, Pencil, Trash2 } from 'lucide-react';
 
 function formatPKR(n: number = 0) {
     return new Intl.NumberFormat('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -12,6 +12,7 @@ function formatPKR(n: number = 0) {
 export default function FacultyManager({ initialFaculty, departments }: { initialFaculty: any[], departments: any[] }) {
     const [search, setSearch] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingFacultyId, setEditingFacultyId] = useState<string | null>(null);
 
     // Form state for a basic Faculty registration
     const [name, setName] = useState('');
@@ -31,14 +32,57 @@ export default function FacultyManager({ initialFaculty, departments }: { initia
         f.designation.toLowerCase().includes(search.toLowerCase())
     );
 
+    const handleAddClick = () => {
+        setEditingFacultyId(null);
+        setName('');
+        setCnic('');
+        setDesignation('Lecturer');
+        setDepartment(departments[0]?.code || '');
+        setEmployeeType('PERMANENT');
+        setJoiningDate(new Date().toISOString().split('T')[0]);
+        setBasicSalary('');
+        setIsModalOpen(true);
+    };
+
+    const handleEditClick = (f: any) => {
+        setEditingFacultyId(f._id);
+        setName(f.name);
+        setCnic(f.cnic);
+        setDesignation(f.designation);
+        setDepartment(f.department);
+        setEmployeeType(f.employeeType);
+        setJoiningDate(new Date(f.joiningDate).toISOString().split('T')[0]);
+        setBasicSalary(f.basicSalary.toString());
+        setIsModalOpen(true);
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!window.confirm("Are you sure you want to delete this faculty member?")) return;
+        try {
+            const res = await fetch(`/api/finance/university/faculty/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to delete faculty member');
+            }
+            window.location.reload();
+        } catch (err: any) {
+            alert(err.message);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
         setError(null);
 
         try {
-            const res = await fetch('/api/finance/university/faculty', {
-                method: 'POST',
+            const url = editingFacultyId
+                ? `/api/finance/university/faculty/${editingFacultyId}`
+                : '/api/finance/university/faculty';
+            const method = editingFacultyId ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name,
@@ -72,7 +116,7 @@ export default function FacultyManager({ initialFaculty, departments }: { initia
                     />
                 </div>
                 <button
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={handleAddClick}
                     className="bg-leads-blue hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
                 >
                     <Plus size={16} />
@@ -91,6 +135,7 @@ export default function FacultyManager({ initialFaculty, departments }: { initia
                             <th className="px-6 py-3">Type</th>
                             <th className="px-6 py-3">Basic Salary</th>
                             <th className="px-6 py-3">Status</th>
+                            <th className="px-6 py-3 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -116,6 +161,16 @@ export default function FacultyManager({ initialFaculty, departments }: { initia
                                         {f.status}
                                     </span>
                                 </td>
+                                <td className="px-6 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-3 transition-opacity">
+                                        <button onClick={() => handleEditClick(f)} className="text-blue-600 hover:text-blue-800 transition-colors p-1" title="Edit Faculty">
+                                            <Pencil size={18} />
+                                        </button>
+                                        <button onClick={() => handleDelete(f._id)} className="text-red-600 hover:text-red-800 transition-colors p-1" title="Delete Faculty">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -132,7 +187,7 @@ export default function FacultyManager({ initialFaculty, departments }: { initia
                             className="bg-white rounded-2xl shadow-2xl w-full max-w-lg my-4"
                         >
                             <div className="flex justify-between items-center p-5 border-b border-gray-100">
-                                <h2 className="font-bold text-gray-900">Register Faculty Member</h2>
+                                <h2 className="font-bold text-gray-900">{editingFacultyId ? "Edit Faculty Member" : "Register Faculty Member"}</h2>
                                 <button type="button" onClick={() => setIsModalOpen(false)}><X size={18} className="text-gray-400 hover:text-gray-600" /></button>
                             </div>
 
@@ -239,7 +294,7 @@ export default function FacultyManager({ initialFaculty, departments }: { initia
                                     <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm text-gray-600 hover:bg-gray-50 font-medium transition-colors">Cancel</button>
                                     <button type="submit" disabled={isSubmitting} className="flex-1 bg-leads-blue text-white rounded-xl py-2.5 text-sm font-medium hover:bg-blue-800 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
                                         {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                                        {isSubmitting ? 'Registering...' : 'Register Faculty'}
+                                        {isSubmitting ? (editingFacultyId ? 'Updating...' : 'Registering...') : (editingFacultyId ? 'Update Faculty' : 'Register Faculty')}
                                     </button>
                                 </div>
                             </form>
