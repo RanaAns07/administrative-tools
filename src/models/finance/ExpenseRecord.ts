@@ -74,7 +74,6 @@ const ExpenseRecordSchema = new Schema<IExpenseRecord>(
         vendorId: {
             type: Schema.Types.ObjectId,
             ref: 'Vendor',
-            default: null,
         },
         department: {
             type: String,
@@ -90,7 +89,7 @@ const ExpenseRecordSchema = new Schema<IExpenseRecord>(
             required: [true, 'recordedBy (User reference) is required.'],
         },
         transactionId: { type: Schema.Types.ObjectId, ref: 'Transaction' },
-        recurringTemplateId: { type: Schema.Types.ObjectId, ref: 'RecurringExpense', default: null },
+        recurringTemplateId: { type: Schema.Types.ObjectId, ref: 'RecurringExpense' },
         generatedForMonth: { type: Number, min: 1, max: 12 },
         generatedForYear: { type: Number },
     },
