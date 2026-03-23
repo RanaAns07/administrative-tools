@@ -45,7 +45,7 @@ const VendorSchema = new Schema<IVendor>(
     { timestamps: true }
 );
 
-VendorSchema.index({ vendorCode: 1 }, { unique: true });
+// VendorSchema.index({ vendorCode: 1 }, { unique: true }); // Removed duplicate index
 VendorSchema.index({ companyName: 1 });
 
 const Vendor =

@@ -20,6 +20,8 @@ import { FinanceError } from '@/lib/finance/FinanceError';
 import { writeAuditLog } from '@/lib/finance-utils';
 
 import '@/models/finance/AccountingPeriod';
+import '@/models/User';
+import '@/models/finance/Vendor';
 
 // ── POST /api/finance/expenses ────────────────────────────────────────────────
 

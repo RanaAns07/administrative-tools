@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import ExpenseRecord from '@/models/finance/ExpenseRecord';
 import Wallet from '@/models/finance/Wallet';
 import Category from '@/models/finance/Category';
+import '@/models/User'; // Required for .populate('recordedBy')
 import { Receipt, Plus, ArrowDownRight } from 'lucide-react';
 import ExpenseModal from './ExpenseModal';
 import Pagination from '../_components/Pagination';
