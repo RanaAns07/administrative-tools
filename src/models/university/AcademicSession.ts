@@ -36,7 +36,7 @@ const AcademicSessionSchema = new Schema<IAcademicSession>(
     }
 );
 
-AcademicSessionSchema.index({ name: 1 }, { unique: true });
+// AcademicSessionSchema.index({ name: 1 }, { unique: true }); // Removed duplicate index
 AcademicSessionSchema.index({ isActive: 1 });
 
 const AcademicSession: Model<IAcademicSession> =

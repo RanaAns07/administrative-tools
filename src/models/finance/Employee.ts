@@ -58,8 +58,8 @@ const EmployeeSchema = new Schema<IEmployee>(
     { timestamps: true }
 );
 
-EmployeeSchema.index({ employeeCode: 1 }, { unique: true });
-EmployeeSchema.index({ cnic: 1 }, { unique: true });
+// EmployeeSchema.index({ employeeCode: 1 }, { unique: true }); // Removed duplicate index
+// EmployeeSchema.index({ cnic: 1 }, { unique: true }); // Removed duplicate index
 EmployeeSchema.index({ department: 1 });
 EmployeeSchema.index({ status: 1 });
 

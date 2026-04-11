@@ -122,7 +122,7 @@ const StudentProfileSchema = new Schema<IStudentProfile>(
 
 // ─── Indexes ──────────────────────────────────────────────────────────────────
 
-StudentProfileSchema.index({ registrationNumber: 1 }, { unique: true });
+// StudentProfileSchema.index({ registrationNumber: 1 }, { unique: true }); // Removed duplicate index
 StudentProfileSchema.index({ batchId: 1 });
 StudentProfileSchema.index({ status: 1 });
 StudentProfileSchema.index({ userId: 1 });

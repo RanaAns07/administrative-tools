@@ -41,7 +41,7 @@ const DepartmentSchema = new Schema<IDepartment>(
     }
 );
 
-DepartmentSchema.index({ code: 1 }, { unique: true });
+// DepartmentSchema.index({ code: 1 }, { unique: true }); // Removed duplicate index
 DepartmentSchema.index({ isActive: 1 });
 
 const Department: Model<IDepartment> =

@@ -66,7 +66,7 @@ const FeePaymentSchema = new Schema<IFeePayment>(
 );
 
 FeePaymentSchema.index({ feeInvoice: 1 });
-FeePaymentSchema.index({ receiptNumber: 1 }, { unique: true });
+// FeePaymentSchema.index({ receiptNumber: 1 }, { unique: true }); // Removed duplicate index
 FeePaymentSchema.index({ paymentDate: 1 });
 
 const FeePayment =
