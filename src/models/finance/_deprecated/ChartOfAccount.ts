@@ -52,8 +52,8 @@ const ChartOfAccountSchema = new Schema<IChartOfAccount>(
 );
 
 // Prevent deleting accounts that have children
-ChartOfAccountSchema.index({ accountCode: 1 }, { unique: true });
-ChartOfAccountSchema.index({ accountType: 1 });
+// ChartOfAccountSchema.index({ accountCode: 1 }, { unique: true }); // Removed duplicate index
+ChartOfAccountSchema.index({ type: 1 });
 ChartOfAccountSchema.index({ parentAccount: 1 });
 
 const ChartOfAccount =

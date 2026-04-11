@@ -119,8 +119,8 @@ JournalEntrySchema.pre('save', async function () {
     }
 });
 
-JournalEntrySchema.index({ entryNumber: 1 }, { unique: true });
-JournalEntrySchema.index({ entryDate: 1 });
+// JournalEntrySchema.index({ entryNumber: 1 }, { unique: true }); // Removed duplicate index
+JournalEntrySchema.index({ entryDate: -1 });
 JournalEntrySchema.index({ status: 1 });
 JournalEntrySchema.index({ accountingPeriod: 1 });
 JournalEntrySchema.index({ source: 1 });

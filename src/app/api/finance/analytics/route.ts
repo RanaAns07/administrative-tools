@@ -21,16 +21,16 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
+import { withErrorHandler } from '@/lib/api-utils';
 import Wallet from '@/models/finance/Wallet';
 import Transaction from '@/models/finance/Transaction';
 import FeeInvoice from '@/models/finance/FeeInvoice';
 import { OPERATIONAL_REVENUE_TYPES, OPERATIONAL_EXPENSE_TYPES } from '@/lib/finance/transactionTypes';
 
-export async function GET() {
-    try {
-        await dbConnect();
+export const GET = withErrorHandler(async () => {
+    await dbConnect();
 
-        const now = new Date();
+    const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
@@ -284,9 +284,4 @@ export async function GET() {
             },
             generatedAt: now.toISOString(),
         });
-    } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Internal server error';
-        console.error('Analytics Error:', err);
-        return NextResponse.json({ error: msg }, { status: 500 });
-    }
-}
+});

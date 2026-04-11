@@ -75,8 +75,8 @@ AssetSchema.pre('save', async function () {
     if (this.bookValue < this.salvageValue) this.bookValue = this.salvageValue;
 });
 
-AssetSchema.index({ assetCode: 1 }, { unique: true });
-AssetSchema.index({ status: 1 });
+// AssetSchema.index({ assetCode: 1 }, { unique: true }); // Removed duplicate index
+AssetSchema.index({ category: 1 });
 AssetSchema.index({ assetCategory: 1 });
 
 const Asset =

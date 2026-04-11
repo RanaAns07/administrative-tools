@@ -33,7 +33,7 @@ export function withErrorHandler(handler: ApiHandler) {
                 {
                     success: false,
                     message: 'Internal server error',
-                    error: process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true' ? error.message : undefined,
+                    error: error.message,
                     stack: process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true' ? error.stack : undefined,
                 },
                 { status: 500 }

@@ -57,7 +57,7 @@ export const GET = withErrorHandler(async (req: Request) => {
 
     console.log(`DEBUG: Found ${invoices.length} invoices. Total: ${total}`);
 
-    return NextResponse.json({ invoices, total, page, limit });
+    return NextResponse.json({ invoices, total, page, limit, success: true });
 });
 
 /**

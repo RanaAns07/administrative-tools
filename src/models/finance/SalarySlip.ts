@@ -95,10 +95,10 @@ const SalarySlipSchema = new Schema<ISalarySlip>(
     }
 );
 
-SalarySlipSchema.index({ month: 1, year: 1 });
-SalarySlipSchema.index({ staffId: 1 });
+// SalarySlipSchema.index({ month: 1, year: 1 });
+// SalarySlipSchema.index({ staffId: 1 });
 SalarySlipSchema.index({ status: 1 });
-SalarySlipSchema.index({ staffId: 1, month: 1, year: 1 }, { unique: true });
+// SalarySlipSchema.index({ staffId: 1, month: 1, year: 1 }, { unique: true });
 
 const SalarySlip: Model<ISalarySlip> =
     mongoose.models.SalarySlip ||

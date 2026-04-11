@@ -17,6 +17,9 @@ import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
 import { withErrorHandler } from '@/lib/api-utils';
 import FeeInvoice from '@/models/finance/FeeInvoice';
+import StudentProfile from '@/models/university/StudentProfile';
+import Batch from '@/models/university/Batch';
+import Program from '@/models/university/Program';
 import { FinanceTransactionService } from '@/lib/finance/FinanceTransactionService';
 import { writeAuditLog } from '@/lib/finance-utils';
 
@@ -152,7 +155,6 @@ export const GET = withErrorHandler(async (req: Request) => {
 
     const search = searchParams.get('search');
     if (search) {
-        const StudentProfile = mongoose.models.StudentProfile || mongoose.model('StudentProfile');
         const matchingStudents = await StudentProfile.find({
             $or: [
                 { registrationNumber: { $regex: search, $options: 'i' } },

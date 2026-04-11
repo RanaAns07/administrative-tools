@@ -91,7 +91,7 @@ const PayrollRunSchema = new Schema<IPayrollRun>(
     { timestamps: true }
 );
 
-PayrollRunSchema.index({ month: 1, year: 1 }, { unique: true });
+// PayrollRunSchema.index({ month: 1, year: 1 }, { unique: true }); // Removed duplicate index
 PayrollRunSchema.index({ status: 1 });
 
 const PayrollRun =
