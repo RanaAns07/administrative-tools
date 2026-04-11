@@ -2,8 +2,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState } from 'react';
-import { Plus, Search, Loader2, User, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, Loader2, User, Pencil, Trash2, Download, FileText } from 'lucide-react';
 import RoleGuard from '../../_components/RoleGuard';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const DEPTS = ['Administration', 'Computer Science', 'Business', 'Engineering', 'Sciences', 'Social Sciences', 'Finance', 'HR', 'IT'];
 const EMP_TYPES = ['PERMANENT', 'CONTRACT', 'VISITING'];
@@ -12,6 +14,11 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
     const [employees, setEmployees] = useState<any[]>(initialEmployees);
     const [search, setSearch] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isPDFModalOpen, setIsPDFModalOpen] = useState(false);
+    const [pdfConfig, setPdfConfig] = useState({
+        month: new Date().getMonth() + 1,
+        year: new Date().getFullYear()
+    });
     const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -95,6 +102,73 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
         finally { setLoading(false); }
     };
 
+    const generatePDF = () => {
+        const doc = new jsPDF();
+        const monthName = new Date(pdfConfig.year, pdfConfig.month - 1).toLocaleString('default', { month: 'long' });
+
+        // Header - B&W Style
+        doc.setFontSize(22);
+        doc.setTextColor(0, 0, 0);
+        doc.text('Lahore Leads University', 105, 20, { align: 'center' });
+
+        doc.setFontSize(14);
+        doc.text(`Monthly Payroll Report - ${monthName} ${pdfConfig.year}`, 105, 30, { align: 'center' });
+
+        doc.setDrawColor(0);
+        doc.setLineWidth(0.5);
+        doc.line(15, 35, 195, 35);
+
+        // Table Data
+        const tableRows = filtered.map((emp, index) => [
+            index + 1,
+            emp.name,
+            emp.role,
+            emp.department,
+            emp.employmentType,
+            emp.employmentType === 'VISITING'
+                ? `Rate: ${emp.perCreditHourRate.toLocaleString()}/hr`
+                : `${emp.baseSalary.toLocaleString()}`
+        ]);
+
+        const totalSalaries = filtered.reduce((sum, emp) => sum + (emp.baseSalary || 0), 0);
+
+        (doc as any).autoTable({
+            startY: 45,
+            head: [['#', 'Name', 'Role', 'Department', 'Type', 'Salary (PKR)']],
+            body: tableRows,
+            theme: 'grid',
+            headStyles: {
+                fillColor: [0, 0, 0],
+                textColor: [255, 255, 255],
+                fontSize: 10,
+                halign: 'center'
+            },
+            columnStyles: {
+                5: { halign: 'right' },
+                0: { halign: 'center' }
+            },
+            styles: {
+                fontSize: 9,
+                cellPadding: 3
+            },
+            alternateRowStyles: { fillColor: [250, 250, 250] },
+            margin: { left: 15, right: 15 },
+        });
+
+        const finalY = (doc as any).lastAutoTable.finalY || 50;
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Total Monthly Payroll: PKR ${totalSalaries.toLocaleString()}`, 195, finalY + 15, { align: 'right' });
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text('Authorized Signature: _______________________', 15, finalY + 30);
+        doc.text(`Generated on: ${new Date().toLocaleString()}`, 15, finalY + 40);
+
+        doc.save(`LLU_Payroll_Report_${monthName}_${pdfConfig.year}.pdf`);
+        setIsPDFModalOpen(false);
+    };
+
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {/* Toolbar */}
@@ -108,6 +182,10 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
                 </div>
                 <div className="flex items-center gap-3">
                     <span className="text-xs text-gray-500">{filtered.length} staff</span>
+                    <button onClick={() => setIsPDFModalOpen(true)}
+                        className="flex items-center gap-2 border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                        <Download size={16} /> Download PDF
+                    </button>
                     <RoleGuard>
                         <button onClick={handleAddClick}
                             className="flex items-center gap-2 bg-leads-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 transition-colors">
@@ -297,6 +375,44 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* PDF Month Selection Modal */}
+            {isPDFModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                            <h3 className="font-bold text-gray-900 text-sm">Download Salary Report</h3>
+                            <button onClick={() => setIsPDFModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                                <Plus size={20} className="rotate-45" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Month</label>
+                                    <select value={pdfConfig.month} onChange={e => setPdfConfig(p => ({ ...p, month: parseInt(e.target.value) }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-leads-blue">
+                                        {Array.from({ length: 12 }, (_, i) => (
+                                            <option key={i + 1} value={i + 1}>{new Date(0, i).toLocaleString('default', { month: 'long' })}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Year</label>
+                                    <select value={pdfConfig.year} onChange={e => setPdfConfig(p => ({ ...p, year: parseInt(e.target.value) }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-leads-blue">
+                                        {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <button onClick={generatePDF} className="w-full bg-leads-blue text-white py-2.5 rounded-xl font-bold text-sm hover:bg-blue-800 transition-colors flex items-center justify-center gap-2 mt-2 shadow-md">
+                                <FileText size={16} /> Generate B&W PDF
+                            </button>
+                            <p className="text-[10px] text-gray-400 text-center italic">Format: Lahore Leads University Official Payroll Report</p>
+                        </div>
                     </div>
                 </div>
             )}
