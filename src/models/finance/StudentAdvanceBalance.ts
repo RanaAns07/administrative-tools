@@ -46,7 +46,7 @@ const StudentAdvanceBalanceSchema = new Schema<IStudentAdvanceBalance>(
     }
 );
 
-StudentAdvanceBalanceSchema.index({ studentProfileId: 1 }, { unique: true });
+// StudentAdvanceBalanceSchema.index({ studentProfileId: 1 }, { unique: true }); // Removed duplicate index
 
 const StudentAdvanceBalance: Model<IStudentAdvanceBalance> =
     mongoose.models.StudentAdvanceBalance ||

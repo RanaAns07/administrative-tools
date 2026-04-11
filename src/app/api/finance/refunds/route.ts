@@ -10,6 +10,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
+import { withErrorHandler } from '@/lib/api-utils';
 import Refund from '@/models/finance/Refund';
 import { FinanceTransactionService } from '@/lib/finance/FinanceTransactionService';
 import { FinanceError } from '@/lib/finance/FinanceError';
@@ -17,7 +18,7 @@ import { FinanceError } from '@/lib/finance/FinanceError';
 import '@/models/finance/AccountingPeriod';
 import '@/models/finance/SecurityDeposit';
 
-export async function GET(req: Request) {
+export const GET = withErrorHandler(async (req: Request) => {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     await dbConnect();
@@ -29,6 +30,8 @@ export async function GET(req: Request) {
     if (studentId && mongoose.isValidObjectId(studentId)) query.studentProfileId = studentId;
     if (refundType) query.refundType = refundType;
 
+    console.log('DEBUG: GET /api/finance/refunds', { query });
+
     const refunds = await Refund.find(query)
         .populate('studentProfileId', 'name registrationNumber')
         .populate('walletId', 'name')
@@ -36,10 +39,12 @@ export async function GET(req: Request) {
         .sort({ processedAt: -1 })
         .lean();
 
-    return NextResponse.json(refunds);
-}
+    console.log(`DEBUG: Found ${refunds.length} refunds`);
 
-export async function POST(req: Request) {
+    return NextResponse.json(refunds);
+});
+
+export const POST = withErrorHandler(async (req: Request) => {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     await dbConnect();
@@ -59,6 +64,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 });
     }
 
+    console.log('DEBUG: POST /api/finance/refunds', { studentProfileId: body.studentProfileId, amount: body.amount });
+
     if (!body.studentProfileId || !body.refundType || !body.amount || !body.walletId || !body.reason) {
         return NextResponse.json({ error: 'studentProfileId, refundType, amount, walletId, reason are required.' }, { status: 400 });
     }
@@ -75,6 +82,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, ...result }, { status: 201 });
     } catch (err) {
         if (err instanceof FinanceError) return NextResponse.json(err.toJSON(), { status: 400 });
-        return NextResponse.json({ error: err instanceof Error ? err.message : 'Error' }, { status: 500 });
+        throw err;
     }
-}
+});
+

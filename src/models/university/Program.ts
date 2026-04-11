@@ -67,7 +67,6 @@ const ProgramSchema = new Schema<IProgram>(
 
 // ─── Indexes ──────────────────────────────────────────────────────────────────
 
-ProgramSchema.index({ code: 1 }, { unique: true });
 ProgramSchema.index({ isActive: 1 });
 
 // ─── Model Export ─────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
+import { withErrorHandler } from '@/lib/api-utils';
 import FeeInvoice from '@/models/finance/FeeInvoice';
 import { FinanceTransactionService } from '@/lib/finance/FinanceTransactionService';
 import { writeAuditLog } from '@/lib/finance-utils';
@@ -23,10 +24,12 @@ import { writeAuditLog } from '@/lib/finance-utils';
 import '@/models/finance/StudentAdvanceBalance';
 import '@/models/finance/AccountingPeriod';
 import '@/models/university/StudentProfile';
+import '@/models/university/Batch';
+import '@/models/university/Program';
 
 // ─── POST /api/finance/fee-collection ────────────────────────────────────────
 
-export async function POST(req: Request) {
+export const POST = withErrorHandler(async (req: Request) => {
     const session = await getServerSession();
     if (!session?.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -49,6 +52,8 @@ export async function POST(req: Request) {
     }
 
     const { invoiceId, amountToPay, walletId, notes } = body;
+
+    console.log('DEBUG: POST /api/finance/fee-collection', { invoiceId, amountToPay, walletId });
 
     if (!invoiceId || !amountToPay || !walletId) {
         return NextResponse.json(
@@ -105,9 +110,12 @@ export async function POST(req: Request) {
             { status: 201 }
         );
     } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: err.name === 'FinanceError' ? 400 : 500 });
+        if (err.name === 'FinanceError') {
+             return NextResponse.json({ error: err.message }, { status: 400 });
+        }
+        throw err;
     }
-}
+});
 
 // ─── GET /api/finance/fee-collection ─────────────────────────────────────────
 
@@ -119,7 +127,7 @@ export async function POST(req: Request) {
  *   feeStructureId    — filter by batch semester
  *   semesterNumber    — filter by semester
  */
-export async function GET(req: Request) {
+export const GET = withErrorHandler(async (req: Request) => {
     const session = await getServerSession();
     if (!session?.user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -127,60 +135,61 @@ export async function GET(req: Request) {
 
     await dbConnect();
 
-    try {
-        const { searchParams } = new URL(req.url);
-        const query: Record<string, unknown> = {};
+    const { searchParams } = new URL(req.url);
+    const query: Record<string, unknown> = {};
 
-        const studentProfileId = searchParams.get('studentProfileId');
-        const status = searchParams.get('status');
-        const feeStructureId = searchParams.get('feeStructureId');
-        const semesterNumber = searchParams.get('semesterNumber');
+    const studentProfileId = searchParams.get('studentProfileId');
+    const status = searchParams.get('status');
+    const feeStructureId = searchParams.get('feeStructureId');
+    const semesterNumber = searchParams.get('semesterNumber');
 
-        if (studentProfileId && mongoose.isValidObjectId(studentProfileId)) {
-            query.studentProfileId = studentProfileId;
-        }
-        if (status) {
-            query.status = status;
-        }
-
-        const search = searchParams.get('search');
-        if (search) {
-            const StudentProfile = mongoose.models.StudentProfile || mongoose.model('StudentProfile');
-            const matchingStudents = await StudentProfile.find({
-                $or: [
-                    { registrationNumber: { $regex: search, $options: 'i' } },
-                    { name: { $regex: search, $options: 'i' } },
-                ]
-            }).select('_id').lean();
-            const studentIds = matchingStudents.map((s: any) => s._id);
-            query.studentProfileId = { $in: studentIds };
-        }
-        if (feeStructureId && mongoose.isValidObjectId(feeStructureId)) {
-            query.feeStructureId = feeStructureId;
-        }
-        if (semesterNumber) {
-            query.semesterNumber = parseInt(semesterNumber, 10);
-        }
-
-        const invoices = await FeeInvoice.find(query)
-            .populate({
-                path: 'studentProfileId',
-                select: 'registrationNumber name email currentSemester status',
-                populate: {
-                    path: 'batchId',
-                    select: 'year season',
-                    populate: { path: 'programId', select: 'name code' },
-                },
-            })
-            .populate({
-                path: 'feeStructureId',
-                select: 'semesterNumber totalAmount feeHeads lateFeePerDay gracePeriodDays',
-            })
-            .sort({ dueDate: 1 })
-            .lean({ virtuals: true });
-
-        return NextResponse.json(invoices);
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    if (studentProfileId && mongoose.isValidObjectId(studentProfileId)) {
+        query.studentProfileId = studentProfileId;
     }
-}
+    if (status) {
+        query.status = status;
+    }
+
+    const search = searchParams.get('search');
+    if (search) {
+        const StudentProfile = mongoose.models.StudentProfile || mongoose.model('StudentProfile');
+        const matchingStudents = await StudentProfile.find({
+            $or: [
+                { registrationNumber: { $regex: search, $options: 'i' } },
+                { name: { $regex: search, $options: 'i' } },
+            ]
+        }).select('_id').lean();
+        const studentIds = matchingStudents.map((s: any) => s._id);
+        query.studentProfileId = { $in: studentIds };
+    }
+    if (feeStructureId && mongoose.isValidObjectId(feeStructureId)) {
+        query.feeStructureId = feeStructureId;
+    }
+    if (semesterNumber) {
+        query.semesterNumber = parseInt(semesterNumber, 10);
+    }
+
+    console.log('DEBUG: GET /api/finance/fee-collection', { query });
+
+    const invoices = await FeeInvoice.find(query)
+        .populate({
+            path: 'studentProfileId',
+            select: 'registrationNumber name email currentSemester status',
+            populate: {
+                path: 'batchId',
+                select: 'year season',
+                populate: { path: 'programId', select: 'name code' },
+            },
+        })
+        .populate({
+            path: 'feeStructureId',
+            select: 'semesterNumber totalAmount feeHeads lateFeePerDay gracePeriodDays',
+        })
+        .sort({ dueDate: 1 })
+        .lean({ virtuals: true });
+
+    console.log(`DEBUG: Found ${invoices.length} invoices for collection`);
+
+    return NextResponse.json(invoices);
+});
+

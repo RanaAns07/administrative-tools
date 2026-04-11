@@ -13,6 +13,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
+import { withErrorHandler } from '@/lib/api-utils';
 import FeeInvoice from '@/models/finance/FeeInvoice';
 import FeePayment from '@/models/finance/FeePayment';
 import { FinanceTransactionService } from '@/lib/finance/FinanceTransactionService';
@@ -25,7 +26,7 @@ import '@/models/finance/AccountingPeriod';
 
 // ── POST /api/finance/fee-payments ────────────────────────────────────────────
 
-export async function POST(req: Request) {
+export const POST = withErrorHandler(async (req: Request) => {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -49,6 +50,8 @@ export async function POST(req: Request) {
     }
 
     const { invoiceId, amount, walletId, paymentMethod, chequeNumber, bankRef, date, notes } = body;
+
+    console.log('DEBUG: POST /api/finance/fee-payments', { invoiceId, amount, walletId });
 
     if (!invoiceId || !walletId || !paymentMethod) {
         return NextResponse.json({ error: 'invoiceId, walletId, and paymentMethod are required.' }, { status: 400 });
@@ -95,56 +98,55 @@ export async function POST(req: Request) {
         if (err instanceof FinanceError) {
             return NextResponse.json(err.toJSON(), { status: 400 });
         }
-        const msg = err instanceof Error ? err.message : 'Internal server error';
-        return NextResponse.json({ error: msg }, { status: 500 });
+        throw err; // Re-throw to be handled by withErrorHandler
     }
-}
+});
 
 // ── GET /api/finance/fee-payments ─────────────────────────────────────────────
 
-export async function GET(req: Request) {
+export const GET = withErrorHandler(async (req: Request) => {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await dbConnect();
 
-    try {
-        const { searchParams } = new URL(req.url);
-        const invoiceId = searchParams.get('invoiceId');
-        const studentId = searchParams.get('studentId');
-        const status = searchParams.get('status');
-        const page = parseInt(searchParams.get('page') || '1', 10);
-        const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const { searchParams } = new URL(req.url);
+    const invoiceId = searchParams.get('invoiceId');
+    const studentId = searchParams.get('studentId');
+    const status = searchParams.get('status');
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-        const query: Record<string, unknown> = {};
-        if (invoiceId && mongoose.isValidObjectId(invoiceId)) query.feeInvoice = invoiceId;
-        if (status) query.status = status;
+    const query: Record<string, unknown> = {};
+    if (invoiceId && mongoose.isValidObjectId(invoiceId)) query.feeInvoice = invoiceId;
+    if (status) query.status = status;
 
-        if (studentId && mongoose.isValidObjectId(studentId)) {
-            const invoices = await FeeInvoice.find({ studentProfileId: studentId }).select('_id').lean();
-            query.feeInvoice = { $in: invoices.map(i => i._id) };
-        }
+    console.log('DEBUG: GET /api/finance/fee-payments', { query, studentId });
 
-        const [payments, total] = await Promise.all([
-            FeePayment.find(query)
-                .populate({
-                    path: 'feeInvoice',
-                    select: 'invoiceNumber invoiceType studentProfileId',
-                    populate: {
-                        path: 'studentProfileId',
-                        select: 'name registrationNumber'
-                    }
-                })
-                .sort({ paymentDate: -1, createdAt: -1 })
-                .skip((page - 1) * limit)
-                .limit(limit)
-                .lean(),
-            FeePayment.countDocuments(query),
-        ]);
-
-        return NextResponse.json({ payments, total, page, limit });
-    } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Internal server error';
-        return NextResponse.json({ error: msg }, { status: 500 });
+    if (studentId && mongoose.isValidObjectId(studentId)) {
+        const invoices = await FeeInvoice.find({ studentProfileId: studentId }).select('_id').lean();
+        query.feeInvoice = { $in: invoices.map(i => i._id) };
     }
-}
+
+    const [payments, total] = await Promise.all([
+        FeePayment.find(query)
+            .populate({
+                path: 'feeInvoice',
+                select: 'invoiceNumber invoiceType studentProfileId',
+                populate: {
+                    path: 'studentProfileId',
+                    select: 'name registrationNumber'
+                }
+            })
+            .sort({ paymentDate: -1, createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit)
+            .lean(),
+        FeePayment.countDocuments(query),
+    ]);
+
+    console.log(`DEBUG: Found ${payments.length} payments`);
+
+    return NextResponse.json({ payments, total, page, limit });
+});
+

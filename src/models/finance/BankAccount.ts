@@ -43,8 +43,8 @@ const BankAccountSchema = new Schema<IBankAccount>(
     { timestamps: true }
 );
 
-BankAccountSchema.index({ accountNumber: 1 }, { unique: true });
-BankAccountSchema.index({ isActive: 1 });
+// BankAccountSchema.index({ accountNumber: 1 }, { unique: true }); // Removed duplicate index
+BankAccountSchema.index({ walletId: 1 });
 
 const BankAccount =
     mongoose.models.BankAccount ||
