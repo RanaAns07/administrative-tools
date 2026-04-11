@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Plus, Search, Loader2, User, Pencil, Trash2, Download, FileText } from 'lucide-react';
 import RoleGuard from '../../_components/RoleGuard';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 const DEPTS = ['Administration', 'Computer Science', 'Business', 'Engineering', 'Sciences', 'Social Sciences', 'Finance', 'HR', 'IT'];
 const EMP_TYPES = ['PERMANENT', 'CONTRACT', 'VISITING'];
@@ -132,7 +132,7 @@ export default function EmployeesClient({ initialEmployees }: { initialEmployees
 
         const totalSalaries = filtered.reduce((sum, emp) => sum + (emp.baseSalary || 0), 0);
 
-        (doc as any).autoTable({
+        autoTable(doc, {
             startY: 45,
             head: [['#', 'Name', 'Role', 'Department', 'Type', 'Salary (PKR)']],
             body: tableRows,
