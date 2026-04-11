@@ -16,6 +16,9 @@ import dbConnect from '@/lib/mongodb';
 import { withErrorHandler } from '@/lib/api-utils';
 import FeeInvoice from '@/models/finance/FeeInvoice';
 import FeePayment from '@/models/finance/FeePayment';
+import StudentProfile from '@/models/university/StudentProfile';
+import Batch from '@/models/university/Batch';
+import Program from '@/models/university/Program';
 import { FinanceTransactionService } from '@/lib/finance/FinanceTransactionService';
 import { FinanceError } from '@/lib/finance/FinanceError';
 import { writeAuditLog } from '@/lib/finance-utils';
@@ -31,6 +34,7 @@ export const POST = withErrorHandler(async (req: Request) => {
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await dbConnect();
+    [StudentProfile, Batch, Program, FeeInvoice, FeePayment].forEach(m => console.log(`DEBUG: Schema registered for ${m.modelName}`));
 
     let body: {
         invoiceId: string;
@@ -109,6 +113,7 @@ export const GET = withErrorHandler(async (req: Request) => {
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await dbConnect();
+    [StudentProfile, Batch, Program, FeeInvoice, FeePayment].forEach(m => console.log(`DEBUG: Schema registered for ${m.modelName}`));
 
     const { searchParams } = new URL(req.url);
     const invoiceId = searchParams.get('invoiceId');

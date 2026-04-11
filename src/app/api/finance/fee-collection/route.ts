@@ -138,6 +138,9 @@ export const GET = withErrorHandler(async (req: Request) => {
 
     await dbConnect();
 
+    // Explicitly reference models to prevent tree-shaking in serverless build
+    [StudentProfile, Batch, Program].forEach(m => console.log(`DEBUG: Schema registered for ${m.modelName}`));
+
     const { searchParams } = new URL(req.url);
     const query: Record<string, unknown> = {};
 

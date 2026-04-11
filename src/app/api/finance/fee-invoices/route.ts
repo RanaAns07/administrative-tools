@@ -23,6 +23,11 @@ import { writeAuditLog } from '@/lib/finance-utils';
  */
 export const GET = withErrorHandler(async (req: Request) => {
     await dbConnect();
+    
+    // Explicitly reference models to prevent tree-shaking in serverless build
+    // This ensures Mongoose registers the schemas for .populate()
+    [StudentProfile, Batch, Program].forEach(m => console.log(`DEBUG: Schema registered for ${m.modelName}`));
+
     const { searchParams } = new URL(req.url);
     const studentProfileId = searchParams.get('studentProfileId');
     const status = searchParams.get('status');
