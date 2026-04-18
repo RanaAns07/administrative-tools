@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import dbConnect from '@/lib/mongodb';
 import StudentProfile from '@/models/university/StudentProfile';
+import Batch from '@/models/university/Batch';
+import Program from '@/models/university/Program';
+import User from '@/models/User';
 import FeeInvoice from '@/models/finance/FeeInvoice';
 import Refund from '@/models/finance/Refund';
 import StudentAdvanceBalance from '@/models/finance/StudentAdvanceBalance';
@@ -12,6 +15,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         await dbConnect();
+
+        // Ensure models are registered for .populate()
+        [Batch, Program, User].forEach(m => console.log(`DEBUG: Schema registered for ${m.modelName}`));
 
         const student = await StudentProfile.findById(params.id).populate({
             path: 'batchId',

@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import dbConnect from '@/lib/mongodb';
 import StudentProfile from '@/models/university/StudentProfile';
+import Batch from '@/models/university/Batch';
+import Program from '@/models/university/Program';
+import User from '@/models/User';
 import { writeAuditLog } from '@/lib/finance-utils';
 
 export async function GET(req: Request) {
@@ -10,6 +13,10 @@ export async function GET(req: Request) {
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         await dbConnect();
+
+        // Ensure models are registered for .populate()
+        [Batch, Program, User].forEach(m => console.log(`DEBUG: Schema registered for ${m.modelName}`));
+
         const { searchParams } = new URL(req.url);
         const search = searchParams.get('search');
 
@@ -36,6 +43,10 @@ export async function POST(req: Request) {
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         await dbConnect();
+        
+        // Ensure models are registered for .populate()
+        [Batch, Program, User].forEach(m => console.log(`DEBUG: Schema registered for ${m.modelName}`));
+
         const body = await req.json();
         const { registrationNumber, name, email, batchId, currentSemester } = body;
 
