@@ -4,6 +4,9 @@ import dbConnect from '@/lib/mongodb';
 import FeeStructure from '@/models/finance/FeeStructure';
 import { writeAuditLog } from '@/lib/finance-utils';
 
+import '@/models/university/Batch'; // Ensure Batch is registered before populate
+import '@/models/university/Program'; // Ensure Program is registered before populate
+
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
     try {
         const session = await getServerSession();
