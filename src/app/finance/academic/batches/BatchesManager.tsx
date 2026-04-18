@@ -2,26 +2,49 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Loader2, X, CheckCircle2, GraduationCap } from 'lucide-react';
+import { Search, Plus, Loader2, X, CheckCircle2, GraduationCap, Pencil, Trash2 } from 'lucide-react';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default function BatchesManager({ initialBatches, programs }: { initialBatches: any[], programs: any[] }) {
+    const [batches, setBatches] = useState(initialBatches);
     const [search, setSearch] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Form state
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [programId, setProgramId] = useState(programs[0]?._id || '');
     const [year, setYear] = useState(new Date().getFullYear());
     const [season, setSeason] = useState('FALL');
+    const [isActive, setIsActive] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const filtered = initialBatches.filter(b =>
+    const filtered = batches.filter(b =>
         b.programId?.name?.toLowerCase().includes(search.toLowerCase()) ||
         b.programId?.code?.toLowerCase().includes(search.toLowerCase()) ||
         b.year.toString().includes(search) ||
         b.season.toLowerCase().includes(search.toLowerCase())
     );
+
+    const openCreate = () => {
+        setEditingId(null);
+        setProgramId(programs[0]?._id || '');
+        setYear(new Date().getFullYear());
+        setSeason('FALL');
+        setIsActive(true);
+        setIsModalOpen(true);
+        setError(null);
+    };
+
+    const openEdit = (batch: any) => {
+        setEditingId(batch._id);
+        setProgramId(batch.programId?._id || '');
+        setYear(batch.year);
+        setSeason(batch.season);
+        setIsActive(batch.isActive ?? true);
+        setIsModalOpen(true);
+        setError(null);
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -29,32 +52,45 @@ export default function BatchesManager({ initialBatches, programs }: { initialBa
         setError(null);
 
         try {
-            const res = await fetch('/api/finance/university/batches', {
-                method: 'POST',
+            const url = editingId 
+                ? `/api/finance/university/batches/${editingId}`
+                : '/api/finance/university/batches';
+            const method = editingId ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ programId, year: Number(year), season })
+                body: JSON.stringify({ programId, year: Number(year), season, isActive })
             });
 
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to create batch');
+            if (!res.ok) throw new Error(data.error || 'Failed to save batch');
 
-            window.location.reload();
+            if (editingId) {
+                setBatches(batches.map(b => b._id === editingId ? data : b));
+            } else {
+                setBatches([data, ...batches]);
+            }
+            setIsModalOpen(false);
         } catch (err: any) {
             setError(err.message || 'An error occurred.');
+        } finally {
             setIsSubmitting(false);
         }
     };
 
-    const toggleStatus = async (batchId: string, currentStatus: boolean) => {
+    const handleDelete = async (id: string, name: string) => {
+        if (!confirm(`Are you sure you want to delete "${name}"? This may affect student records.`)) return;
+        
         try {
-            const res = await fetch(`/api/finance/university/batches/${batchId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isActive: !currentStatus })
-            });
-            if (res.ok) window.location.reload();
-        } catch (err) {
-            console.error(err);
+            const res = await fetch(`/api/finance/university/batches/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to delete');
+            }
+            setBatches(batches.filter(b => b._id !== id));
+        } catch (err: any) {
+            alert(err.message);
         }
     };
 
@@ -69,7 +105,7 @@ export default function BatchesManager({ initialBatches, programs }: { initialBa
                     />
                 </div>
                 <button
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={openCreate}
                     className="bg-leads-blue hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-colors"
                 >
                     <Plus size={16} />
@@ -86,7 +122,7 @@ export default function BatchesManager({ initialBatches, programs }: { initialBa
                             <th className="px-6 py-3">Season</th>
                             <th className="px-6 py-3">Batch Name</th>
                             <th className="px-6 py-3">Status</th>
-                            <th className="px-6 py-3">Actions</th>
+                            <th className="px-6 py-3 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -111,13 +147,15 @@ export default function BatchesManager({ initialBatches, programs }: { initialBa
                                         {b.isActive ? 'Active' : 'Inactive'}
                                     </span>
                                 </td>
-                                <td className="px-6 py-4">
-                                    <button
-                                        onClick={() => toggleStatus(b._id, b.isActive)}
-                                        className="text-xs font-semibold text-gray-600 hover:text-leads-blue transition-colors px-3 py-1.5 rounded-lg border border-gray-200 hover:border-leads-blue hover:bg-blue-50/50"
-                                    >
-                                        Toggle Status
-                                    </button>
+                                <td className="px-6 py-4 text-right">
+                                    <div className="flex justify-end gap-2">
+                                        <button onClick={() => openEdit(b)} className="p-1.5 text-gray-400 hover:text-leads-blue hover:bg-blue-50 rounded-lg transition-colors">
+                                            <Pencil size={16} />
+                                        </button>
+                                        <button onClick={() => handleDelete(b._id, `${b.programId?.code} ${b.season} ${b.year}`)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -135,7 +173,7 @@ export default function BatchesManager({ initialBatches, programs }: { initialBa
                             className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-4"
                         >
                             <div className="flex justify-between items-center p-5 border-b border-gray-100">
-                                <h2 className="font-bold text-gray-900">Register New Batch</h2>
+                                <h2 className="font-bold text-gray-900">{editingId ? 'Edit Batch' : 'Register New Batch'}</h2>
                                 <button type="button" onClick={() => setIsModalOpen(false)}><X size={18} className="text-gray-400 hover:text-gray-600" /></button>
                             </div>
 
@@ -148,6 +186,7 @@ export default function BatchesManager({ initialBatches, programs }: { initialBa
                                         onChange={e => setProgramId(e.target.value)}
                                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-leads-blue bg-white"
                                     >
+                                        <option value="" disabled>-- Select Program --</option>
                                         {programs.map(p => (
                                             <option key={p._id} value={p._id}>{p.name} ({p.code})</option>
                                         ))}
@@ -181,13 +220,21 @@ export default function BatchesManager({ initialBatches, programs }: { initialBa
                                     </div>
                                 </div>
 
+                                {editingId && (
+                                    <div className="flex items-center gap-2">
+                                        <input type="checkbox" id="isActiveBatch" checked={isActive} onChange={e => setIsActive(e.target.checked)}
+                                            className="w-4 h-4 text-leads-blue border-gray-300 rounded focus:ring-leads-blue" />
+                                        <label htmlFor="isActiveBatch" className="text-xs font-semibold text-gray-600">Active Batch</label>
+                                    </div>
+                                )}
+
                                 {error && <p className="text-red-600 text-xs bg-red-50 rounded-lg px-3 py-2 border border-red-100">{error}</p>}
 
                                 <div className="flex gap-3 pt-4">
                                     <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm text-gray-600 hover:bg-gray-50 font-medium transition-colors">Cancel</button>
                                     <button type="submit" disabled={isSubmitting} className="flex-1 bg-leads-blue text-white rounded-xl py-2.5 text-sm font-medium hover:bg-blue-800 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
                                         {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                                        {isSubmitting ? 'Saving...' : 'Create Batch'}
+                                        {isSubmitting ? 'Saving...' : editingId ? 'Update Batch' : 'Create Batch'}
                                     </button>
                                 </div>
                             </form>

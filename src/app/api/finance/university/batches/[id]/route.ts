@@ -4,25 +4,25 @@ import dbConnect from '@/lib/mongodb';
 import Batch from '@/models/university/Batch';
 import { writeAuditLog } from '@/lib/finance-utils';
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: Request, { params }: { params: { id: string } }) {
     try {
         const session = await getServerSession();
         if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         await dbConnect();
         const body = await req.json();
-        const { isActive } = body;
-
-        if (typeof isActive === 'undefined') {
-            return NextResponse.json({ error: 'isActive status is required.' }, { status: 400 });
-        }
+        const { year, season, programId, isActive } = body;
 
         const batch = await Batch.findById(params.id);
-        if (!batch) {
-            return NextResponse.json({ error: 'Batch not found.' }, { status: 404 });
-        }
+        if (!batch) return NextResponse.json({ error: 'Batch not found' }, { status: 404 });
 
-        batch.isActive = Boolean(isActive);
+        const oldState = { year: batch.year, season: batch.season, programId: batch.programId, isActive: batch.isActive };
+
+        if (year) batch.year = Number(year);
+        if (season) batch.season = season;
+        if (programId) batch.programId = programId;
+        if (typeof isActive !== 'undefined') batch.isActive = Boolean(isActive);
+
         await batch.save();
 
         await writeAuditLog({
@@ -31,11 +31,46 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             entityId: batch._id.toString(),
             entityReference: `${batch.season} ${batch.year}`,
             performedBy: session.user.email || 'unknown',
-            newState: { isActive: batch.isActive },
+            oldState,
+            newState: { year: batch.year, season: batch.season, programId: batch.programId, isActive: batch.isActive },
         });
 
-        return NextResponse.json(batch, { status: 200 });
+        // Fetch again to populate programId for the UI
+        const updated = await Batch.findById(batch._id).populate('programId', 'name code');
+
+        return NextResponse.json(updated);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
+}
+
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+    try {
+        const session = await getServerSession();
+        if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        await dbConnect();
+        const batch = await Batch.findById(params.id);
+        if (!batch) return NextResponse.json({ error: 'Batch not found' }, { status: 404 });
+
+        await Batch.findByIdAndDelete(params.id);
+
+        await writeAuditLog({
+            action: 'DELETE',
+            entityType: 'Batch',
+            entityId: params.id,
+            entityReference: `${batch.season} ${batch.year}`,
+            performedBy: session.user.email || 'unknown',
+            oldState: { year: batch.year, season: batch.season },
+        });
+
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
+// Keep PATCH for backward compatibility if needed, though PUT handles isActive now
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+    return PUT(req, { params });
 }

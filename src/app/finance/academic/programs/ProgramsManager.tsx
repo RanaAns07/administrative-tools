@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GraduationCap, Plus, X, Loader2, Check } from 'lucide-react';
+import { GraduationCap, Plus, X, Loader2, Check, Pencil, Trash2 } from 'lucide-react';
 
 export default function ProgramsManager({ initialPrograms }: { initialPrograms: any[] }) {
     const router = useRouter();
@@ -12,7 +12,27 @@ export default function ProgramsManager({ initialPrograms }: { initialPrograms: 
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [form, setForm] = useState({ name: '', code: '', totalSemesters: 8 });
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [form, setForm] = useState({ name: '', code: '', totalSemesters: 8, isActive: true });
+
+    const openCreate = () => {
+        setEditingId(null);
+        setForm({ name: '', code: '', totalSemesters: 8, isActive: true });
+        setShowModal(true);
+        setError(null);
+    };
+
+    const openEdit = (prog: any) => {
+        setEditingId(prog._id);
+        setForm({
+            name: prog.name,
+            code: prog.code,
+            totalSemesters: prog.totalSemesters,
+            isActive: prog.isActive ?? true
+        });
+        setShowModal(true);
+        setError(null);
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -20,22 +40,47 @@ export default function ProgramsManager({ initialPrograms }: { initialPrograms: 
         setError(null);
 
         try {
-            const res = await fetch('/api/finance/university/programs', {
-                method: 'POST',
+            const url = editingId 
+                ? `/api/finance/university/programs/${editingId}`
+                : '/api/finance/university/programs';
+            const method = editingId ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form)
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to create program');
+            if (!res.ok) throw new Error(data.error || 'Failed to save program');
 
             setShowModal(false);
-            setForm({ name: '', code: '', totalSemesters: 8 });
             router.refresh();
-            setPrograms([...programs, data].sort((a, b) => a.name.localeCompare(b.name)));
+            
+            if (editingId) {
+                setPrograms(programs.map(p => p._id === editingId ? data : p));
+            } else {
+                setPrograms([...programs, data].sort((a, b) => a.name.localeCompare(b.name)));
+            }
         } catch (err: any) {
             setError(err.message);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleDelete = async (id: string, name: string) => {
+        if (!confirm(`Are you sure you want to delete "${name}"? This may affect existing batches.`)) return;
+        
+        try {
+            const res = await fetch(`/api/finance/university/programs/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to delete');
+            }
+            setPrograms(programs.filter(p => p._id !== id));
+            router.refresh();
+        } catch (err: any) {
+            alert(err.message);
         }
     };
 
@@ -48,7 +93,7 @@ export default function ProgramsManager({ initialPrograms }: { initialPrograms: 
                     <p className="text-sm text-gray-400">Manage {programs.length} degree programs and their durations.</p>
                 </div>
                 <button
-                    onClick={() => setShowModal(true)}
+                    onClick={openCreate}
                     className="inline-flex items-center gap-2 bg-leads-blue text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-leads-blue/90 transition-colors shadow-sm"
                 >
                     <Plus size={15} /> Add Program
@@ -76,7 +121,8 @@ export default function ProgramsManager({ initialPrograms }: { initialPrograms: 
                                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Program Name</th>
                                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Code</th>
                                     <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Semesters</th>
-                                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
@@ -93,10 +139,20 @@ export default function ProgramsManager({ initialPrograms }: { initialPrograms: 
                                         <td className="px-6 py-4 text-center">
                                             <span className="font-semibold text-gray-700">{prog.totalSemesters}</span>
                                         </td>
-                                        <td className="px-6 py-4 text-right">
+                                        <td className="px-6 py-4 text-center">
                                             <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${prog.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                                                 {prog.isActive ? 'ACTIVE' : 'INACTIVE'}
                                             </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <button onClick={() => openEdit(prog)} className="p-1.5 text-gray-400 hover:text-leads-blue hover:bg-blue-50 rounded-lg transition-colors">
+                                                    <Pencil size={16} />
+                                                </button>
+                                                <button onClick={() => handleDelete(prog._id, prog.name)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -112,7 +168,7 @@ export default function ProgramsManager({ initialPrograms }: { initialPrograms: 
                         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
                             className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
                             <div className="flex justify-between items-center mb-5 border-b border-gray-100 pb-3">
-                                <h2 className="font-bold text-lg text-leads-blue flex items-center gap-2"><GraduationCap size={18} /> New Program</h2>
+                                <h2 className="font-bold text-lg text-leads-blue flex items-center gap-2"><GraduationCap size={18} /> {editingId ? 'Edit Program' : 'New Program'}</h2>
                                 <button type="button" onClick={() => setShowModal(false)}><X size={18} className="text-gray-400 hover:text-gray-600" /></button>
                             </div>
 
@@ -137,12 +193,20 @@ export default function ProgramsManager({ initialPrograms }: { initialPrograms: 
                                     </div>
                                 </div>
 
+                                {editingId && (
+                                    <div className="flex items-center gap-2">
+                                        <input type="checkbox" id="isActive" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })}
+                                            className="w-4 h-4 text-leads-blue border-gray-300 rounded focus:ring-leads-blue" />
+                                        <label htmlFor="isActive" className="text-xs font-semibold text-gray-600">Active Program</label>
+                                    </div>
+                                )}
+
                                 {error && <p className="text-red-600 text-xs bg-red-50 rounded-xl px-3 py-2 border border-red-100">{error}</p>}
 
                                 <div className="flex gap-3 pt-4 border-t border-gray-100">
                                     <button type="button" onClick={() => setShowModal(false)} className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
                                     <button type="submit" disabled={saving || !form.name || !form.code} className="flex-1 bg-leads-blue text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
-                                        {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Save Program
+                                        {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {editingId ? 'Update' : 'Save'} Program
                                     </button>
                                 </div>
                             </form>

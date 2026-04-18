@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ClipboardList, Plus, X, Check, Loader2 } from 'lucide-react';
+import { ClipboardList, Plus, X, Check, Loader2, Pencil, Trash2 } from 'lucide-react';
 
 interface FeeStructureManagerProps {
     initialStructures: any[];
@@ -18,15 +18,49 @@ export default function FeeStructureManager({ initialStructures, batches }: FeeS
     const [error, setError] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [form, setForm] = useState({
         batchId: '',
         semesterNumber: 1,
         lateFeePerDay: 100,
         gracePeriodDays: 7,
+        isActive: true,
         feeHeads: [
             { name: 'Tuition Fee', amount: 0, isOptional: false },
         ],
     });
+
+    const openCreate = () => {
+        setEditingId(null);
+        setForm({
+            batchId: '',
+            semesterNumber: 1,
+            lateFeePerDay: 100,
+            gracePeriodDays: 7,
+            isActive: true,
+            feeHeads: [{ name: 'Tuition Fee', amount: 0, isOptional: false }]
+        });
+        setShowModal(true);
+        setError(null);
+    };
+
+    const openEdit = (s: any) => {
+        setEditingId(s._id);
+        setForm({
+            batchId: s.batchId?._id || '',
+            semesterNumber: s.semesterNumber,
+            lateFeePerDay: s.lateFeePerDay || 0,
+            gracePeriodDays: s.gracePeriodDays || 0,
+            isActive: s.isActive ?? true,
+            feeHeads: s.feeHeads.map((h: any) => ({
+                name: h.name,
+                amount: h.amount,
+                isOptional: h.isOptional ?? false
+            }))
+        });
+        setShowModal(true);
+        setError(null);
+    };
 
     const addComponent = () => setForm({
         ...form,
@@ -51,8 +85,13 @@ export default function FeeStructureManager({ initialStructures, batches }: FeeS
         setSaving(true);
         setError(null);
         try {
-            const res = await fetch('/api/finance/fee-structures', {
-                method: 'POST',
+            const url = editingId 
+                ? `/api/finance/fee-structures/${editingId}`
+                : '/api/finance/fee-structures';
+            const method = editingId ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form),
             });
@@ -60,23 +99,33 @@ export default function FeeStructureManager({ initialStructures, batches }: FeeS
             if (!res.ok) throw new Error(data.error);
 
             setShowModal(false);
-            setForm({
-                batchId: '',
-                semesterNumber: 1,
-                lateFeePerDay: 100,
-                gracePeriodDays: 7,
-                feeHeads: [{ name: 'Tuition Fee', amount: 0, isOptional: false }]
-            });
-
-            // Refresh the server component to fetch latest data
             router.refresh();
 
-            // Optionally optimistic UI update (router.refresh takes a moment)
-            setStructures([data, ...structures]);
+            if (editingId) {
+                setStructures(structures.map(s => s._id === editingId ? data : s));
+            } else {
+                setStructures([data, ...structures]);
+            }
         } catch (err: any) {
             setError(err.message);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleDelete = async (id: string, name: string) => {
+        if (!confirm(`Are you sure you want to delete the fee structure for ${name}?`)) return;
+        
+        try {
+            const res = await fetch(`/api/finance/fee-structures/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to delete');
+            }
+            setStructures(structures.filter(s => s._id !== id));
+            router.refresh();
+        } catch (err: any) {
+            alert(err.message);
         }
     };
 
@@ -90,7 +139,7 @@ export default function FeeStructureManager({ initialStructures, batches }: FeeS
                     <p className="text-xs text-gray-500 mt-0.5">Program-wise fee components · {structures.length} structures</p>
                 </div>
                 <button
-                    onClick={() => setShowModal(true)}
+                    onClick={openCreate}
                     className="flex items-center gap-2 bg-leads-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 shadow-sm transition-colors"
                 >
                     <Plus size={16} /> New Fee Structure
@@ -112,29 +161,39 @@ export default function FeeStructureManager({ initialStructures, batches }: FeeS
                         return (
                             <motion.div key={s._id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
                                 className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                                <button
-                                    onClick={() => setExpandedId(expandedId === s._id ? null : s._id)}
-                                    className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50/50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-4">
-                                        <div className="p-2.5 bg-leads-blue/10 rounded-lg">
-                                            <ClipboardList size={18} className="text-leads-blue" />
+                                <div className="flex items-center">
+                                    <button
+                                        onClick={() => setExpandedId(expandedId === s._id ? null : s._id)}
+                                        className="flex-1 flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50/50 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-2.5 bg-leads-blue/10 rounded-lg">
+                                                <ClipboardList size={18} className="text-leads-blue" />
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-gray-900">{batchName}</p>
+                                                <p className="text-xs text-gray-500">Semester {s.semesterNumber}</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="font-semibold text-gray-900">{batchName}</p>
-                                            <p className="text-xs text-gray-500">Semester {s.semesterNumber}</p>
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-right">
+                                                <p className="text-sm font-bold text-leads-blue">PKR {(s.totalAmount || 0).toLocaleString('en-PK')}</p>
+                                                <p className="text-[10px] text-gray-400">{s.feeHeads?.length || 0} components</p>
+                                            </div>
+                                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                                {s.isActive ? 'ACTIVE' : 'INACTIVE'}
+                                            </span>
                                         </div>
+                                    </button>
+                                    <div className="flex items-center gap-2 pr-5">
+                                        <button onClick={() => openEdit(s)} className="p-1.5 text-gray-400 hover:text-leads-blue hover:bg-blue-50 rounded-lg transition-colors">
+                                            <Pencil size={16} />
+                                        </button>
+                                        <button onClick={() => handleDelete(s._id, `${batchName} (S${s.semesterNumber})`)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                            <Trash2 size={16} />
+                                        </button>
                                     </div>
-                                    <div className="flex items-center gap-4">
-                                        <div className="text-right">
-                                            <p className="text-sm font-bold text-leads-blue">PKR {(s.totalAmount || 0).toLocaleString('en-PK')}</p>
-                                            <p className="text-[10px] text-gray-400">{s.feeHeads?.length || 0} components</p>
-                                        </div>
-                                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                            {s.isActive ? 'ACTIVE' : 'INACTIVE'}
-                                        </span>
-                                    </div>
-                                </button>
+                                </div>
 
                                 {expandedId === s._id && (
                                     <div className="border-t border-gray-100 px-5 py-4">
@@ -174,14 +233,14 @@ export default function FeeStructureManager({ initialStructures, batches }: FeeS
                 </div>
             )}
 
-            {/* Create Modal */}
+            {/* Modal */}
             <AnimatePresence>
                 {showModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto">
                         <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
                             className="bg-white rounded-2xl shadow-2xl w-full max-w-xl my-4">
                             <div className="flex justify-between items-center p-5 border-b border-gray-100">
-                                <h2 className="font-bold text-leads-blue">New Fee Structure</h2>
+                                <h2 className="font-bold text-leads-blue">{editingId ? 'Edit Fee Structure' : 'New Fee Structure'}</h2>
                                 <button onClick={() => setShowModal(false)}><X size={18} className="text-gray-400" /></button>
                             </div>
                             <form onSubmit={handleSubmit} className="p-5 space-y-4">
@@ -214,6 +273,13 @@ export default function FeeStructureManager({ initialStructures, batches }: FeeS
                                             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-leads-blue"
                                         />
                                     </div>
+                                    {editingId && (
+                                        <div className="flex items-center gap-2 pt-5">
+                                            <input type="checkbox" id="isActiveStructure" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })}
+                                                className="w-4 h-4 text-leads-blue border-gray-300 rounded focus:ring-leads-blue" />
+                                            <label htmlFor="isActiveStructure" className="text-xs font-semibold text-gray-600">Active Structure</label>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Fee Components */}
@@ -287,7 +353,7 @@ export default function FeeStructureManager({ initialStructures, batches }: FeeS
                                     <button type="button" onClick={() => setShowModal(false)} className="flex-1 border border-gray-200 rounded-lg py-2.5 text-sm text-gray-600 hover:bg-gray-50 font-medium transition-colors">Cancel</button>
                                     <button type="submit" disabled={saving || !form.batchId || form.feeHeads.length === 0}
                                         className="flex-1 bg-leads-blue text-white rounded-lg py-2.5 text-sm font-medium hover:bg-blue-800 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors">
-                                        {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Create Structure
+                                        {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {editingId ? 'Update Structure' : 'Create Structure'}
                                     </button>
                                 </div>
                             </form>
