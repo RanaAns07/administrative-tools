@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Loader2, Wallet, Check, X, User, FileText, AlertCircle, Clock } from 'lucide-react';
 
@@ -16,8 +16,8 @@ const statusColors: Record<string, string> = {
     WAIVED: 'bg-gray-100 text-gray-700',
 };
 
-export default function FeeReceiveForm({ wallets, categories }: { wallets: any[], categories: any[] }) {
-    const [searchQuery, setSearchQuery] = useState('');
+export default function FeeReceiveForm({ wallets, categories, initialSearch = '' }: { wallets: any[], categories: any[], initialSearch?: string }) {
+    const [searchQuery, setSearchQuery] = useState(initialSearch);
     const [isSearching, setIsSearching] = useState(false);
     const [invoices, setInvoices] = useState<any[]>([]);
     const [hasSearched, setHasSearched] = useState(false);
@@ -31,9 +31,9 @@ export default function FeeReceiveForm({ wallets, categories }: { wallets: any[]
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-    const handleSearch = async (e?: React.FormEvent) => {
-        if (e) e.preventDefault();
-        if (!searchQuery.trim()) return;
+    const handleSearch = useCallback(async (q?: string) => {
+        const query = q ?? searchQuery;
+        if (!query.trim()) return;
 
         setIsSearching(true);
         setHasSearched(true);
@@ -43,7 +43,7 @@ export default function FeeReceiveForm({ wallets, categories }: { wallets: any[]
         setSuccessMessage(null);
 
         try {
-            const res = await fetch(`/api/finance/fee-collection?search=${encodeURIComponent(searchQuery)}`);
+            const res = await fetch(`/api/finance/fee-collection?search=${encodeURIComponent(query)}`);
             if (!res.ok) throw new Error('Search failed');
             const data = await res.json();
             setInvoices(Array.isArray(data) ? data : []);
@@ -52,6 +52,17 @@ export default function FeeReceiveForm({ wallets, categories }: { wallets: any[]
         } finally {
             setIsSearching(false);
         }
+    }, [searchQuery]);
+
+    useEffect(() => {
+        if (initialSearch) {
+            handleSearch(initialSearch);
+        }
+    }, [initialSearch, handleSearch]);
+
+    const handleSearchSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        handleSearch();
     };
 
     const handleSelectInvoice = (inv: any) => {
@@ -109,7 +120,7 @@ export default function FeeReceiveForm({ wallets, categories }: { wallets: any[]
             </div>
 
             {/* Search Bar */}
-            <form onSubmit={handleSearch} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex items-end gap-4">
+            <form onSubmit={handleSearchSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex items-end gap-4">
                 <div className="flex-1">
                     <label className="text-sm font-semibold text-gray-700 block mb-2">Search Student</label>
                     <div className="relative">

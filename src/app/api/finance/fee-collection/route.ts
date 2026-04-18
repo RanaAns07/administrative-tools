@@ -26,6 +26,7 @@ import { writeAuditLog } from '@/lib/finance-utils';
 // Ensure models are registered
 import '@/models/finance/StudentAdvanceBalance';
 import '@/models/finance/AccountingPeriod';
+import '@/models/finance/FeeStructure';
 import '@/models/university/StudentProfile';
 import '@/models/university/Batch';
 import '@/models/university/Program';

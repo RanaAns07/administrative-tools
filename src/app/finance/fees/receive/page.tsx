@@ -3,7 +3,7 @@ import Wallet from '@/models/finance/Wallet';
 import Category from '@/models/finance/Category';
 import FeeReceiveForm from './FeeReceiveForm';
 
-export default async function FeeReceivePage() {
+export default async function FeeReceivePage({ searchParams }: { searchParams: { search?: string } }) {
     await dbConnect();
 
     // Fetch active wallets and income categories for the payment form
@@ -14,6 +14,7 @@ export default async function FeeReceivePage() {
         <FeeReceiveForm
             wallets={JSON.parse(JSON.stringify(wallets))}
             categories={JSON.parse(JSON.stringify(categories))}
+            initialSearch={searchParams.search}
         />
     );
 }

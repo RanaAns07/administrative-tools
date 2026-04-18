@@ -419,13 +419,6 @@ export default function DashboardClient({ data }: Props) {
                         Viewing <span className="text-gray-700">{period.month} {period.year}</span> · Updated {new Date(generatedAt).toLocaleString('en-PK', { timeStyle: 'short' })}
                     </p>
                 </div>
-                <a
-                    href="/finance/transactions"
-                    className="flex items-center gap-2 text-sm font-semibold text-white bg-leads-blue hover:bg-blue-800 transition-colors px-4 py-2.5 rounded-xl shadow-sm"
-                >
-                    <Activity size={15} />
-                    View Ledger
-                </a>
             </motion.div>
 
             {/* ── Top Row: Summary KPIs ────────────────────────────────────── */}
