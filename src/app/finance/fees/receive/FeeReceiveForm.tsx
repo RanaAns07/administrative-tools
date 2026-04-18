@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Loader2, Wallet, Check, X, User, FileText, AlertCircle, Clock } from 'lucide-react';
+import { Search, Loader2, Wallet, Check, X, User, FileText, AlertCircle, Clock, Plus } from 'lucide-react';
 
 function formatPKR(n: number = 0) {
     return new Intl.NumberFormat('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -17,6 +18,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function FeeReceiveForm({ wallets, categories, initialSearch = '' }: { wallets: any[], categories: any[], initialSearch?: string }) {
+    const router = useRouter();
     const [searchQuery, setSearchQuery] = useState(initialSearch);
     const [isSearching, setIsSearching] = useState(false);
     const [invoices, setInvoices] = useState<any[]>([]);
@@ -293,17 +295,30 @@ export default function FeeReceiveForm({ wallets, categories, initialSearch = ''
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-semibold text-gray-600 mb-1 block">Income Category</label>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="text-xs font-semibold text-gray-600 block">Income Category</label>
+                                            <button
+                                                type="button"
+                                                onClick={() => router.push('/finance/categories')}
+                                                className="text-leads-blue hover:text-blue-800 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                                            >
+                                                <Plus size={10} /> Add New
+                                            </button>
+                                        </div>
                                         <select
                                             required
                                             value={selectedCategoryId}
                                             onChange={e => setSelectedCategoryId(e.target.value)}
                                             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-leads-blue bg-white"
                                         >
+                                            <option value="" disabled>-- Select Category --</option>
                                             {categories.map(c => (
                                                 <option key={c._id} value={c._id}>{c.name}</option>
                                             ))}
                                         </select>
+                                        {categories.length === 0 && (
+                                            <p className="text-[10px] text-rose-500 mt-1 font-medium">No active income categories found. Please add one.</p>
+                                        )}
                                     </div>
                                 </div>
                                 <div>

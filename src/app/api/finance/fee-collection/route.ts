@@ -196,6 +196,11 @@ export const GET = withErrorHandler(async (req: Request) => {
 
     console.log(`DEBUG: Found ${invoices.length} invoices for collection`);
 
-    return NextResponse.json(invoices);
+    const invoicesWithArrears = invoices.map((inv: any) => ({
+        ...inv,
+        arrears: Math.max(0, (inv.totalAmount || 0) - (inv.discountAmount || 0) - (inv.discountFromAdvance || 0) + (inv.penaltyAmount || 0) - (inv.amountPaid || 0)),
+    }));
+
+    return NextResponse.json(invoicesWithArrears);
 });
 
