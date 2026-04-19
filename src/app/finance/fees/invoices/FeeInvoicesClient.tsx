@@ -3,13 +3,14 @@
 
 import React, { useEffect, useState, useMemo, Suspense } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Plus, Loader2, X, Check, IndianRupee, Clock, AlertTriangle, Settings, LayoutList } from 'lucide-react';
+import { Users, Plus, Loader2, X, Check, IndianRupee, Clock, AlertTriangle, Settings, LayoutList, Download } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Pagination from '../../_components/Pagination';
 import RoleGuard from '../../_components/RoleGuard';
 import FeeOverrideModal from '@/components/finance/FeeOverrideModal';
 import InstallmentWizard from '@/components/finance/InstallmentWizard';
 import { IFeeInvoice } from '@/models/finance/FeeInvoice';
+import * as XLSX from 'xlsx';
 
 interface Invoice {
     _id: string; invoiceNumber: string; studentName: string; rollNumber: string;
@@ -54,6 +55,45 @@ function FeeInvoicesClientContent() {
 
     const [form, setForm] = useState({ studentId: '', studentName: '', rollNumber: '', feeStructureId: '', dueDate: '' });
     const [payForm, setPayForm] = useState({ amount: 0, paymentMode: 'CASH', paymentDate: new Date().toISOString().split('T')[0], walletId: '' });
+
+    const exportToExcel = () => {
+        const currentData = invoices.filter(inv => activeTab === 'STANDARD' ? inv.status !== 'PARTIAL' : inv.status === 'PARTIAL');
+        
+        let mappedData;
+        if (activeTab === 'STANDARD') {
+            mappedData = currentData.map(inv => ({
+                "Invoice ID": inv.invoiceNumber,
+                "Student Name": inv.studentName,
+                "Roll Number": inv.rollNumber,
+                "Program": inv.program,
+                "Semester": inv.semester,
+                "Total Fee": inv.totalAmount,
+                "Paid": inv.paidAmount,
+                "Outstanding": inv.outstandingAmount,
+                "Due Date": new Date(inv.dueDate).toLocaleDateString(),
+                "Status": inv.status
+            }));
+        } else {
+            mappedData = currentData.map(inv => ({
+                "Invoice ID": inv.invoiceNumber,
+                "Student Name": inv.studentName,
+                "Roll Number": inv.rollNumber,
+                "Program": inv.program,
+                "Current Installment": inv.nextInstallment?.amount || 0,
+                "Due Date": inv.nextInstallment ? new Date(inv.nextInstallment.dueDate).toLocaleDateString() : 'N/A',
+                "Total Paid": inv.paidAmount,
+                "Total Remaining": inv.outstandingAmount,
+                "Status": inv.status
+            }));
+        }
+
+        const ws = XLSX.utils.json_to_sheet(mappedData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, activeTab === 'STANDARD' ? "Full Fee Submissions" : "Active Installments");
+        
+        const date = new Date().toISOString().split('T')[0];
+        XLSX.writeFile(wb, `University_Invoices_Export_${activeTab}_${date}.xlsx`);
+    };
 
     const handleQuickVerify = async (inv: Invoice, amount: number) => {
         if (wallets.length === 0) {
@@ -199,12 +239,17 @@ function FeeInvoicesClientContent() {
                     <h1 className="text-xl font-bold text-leads-blue flex items-center gap-2"><Users size={22} /> Fee Invoices</h1>
                     <p className="text-xs text-gray-500 mt-0.5">Student fee billing · {totalCount} total invoices</p>
                 </div>
-                <RoleGuard>
-                    <button onClick={() => setShowModal(true)}
-                        className="flex items-center gap-2 bg-leads-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 shadow-sm">
-                        <Plus size={16} /> New Invoice
+                <div className="flex items-center gap-2">
+                    <button onClick={exportToExcel} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 shadow-sm transition-all font-medium text-sm">
+                        <Download size={16} /> Export
                     </button>
-                </RoleGuard>
+                    <RoleGuard>
+                        <button onClick={() => setShowModal(true)}
+                            className="flex items-center gap-2 bg-leads-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 shadow-sm">
+                            <Plus size={16} /> New Invoice
+                        </button>
+                    </RoleGuard>
+                </div>
             </div>
 
             {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex gap-2">{error}<button className="ml-auto" onClick={() => setError(null)}><X size={12} /></button></div>}
