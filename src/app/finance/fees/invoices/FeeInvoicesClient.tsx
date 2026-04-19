@@ -3,10 +3,13 @@
 
 import React, { useEffect, useState, useMemo, Suspense } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Plus, Loader2, X, Check, IndianRupee, Clock, AlertTriangle } from 'lucide-react';
+import { Users, Plus, Loader2, X, Check, IndianRupee, Clock, AlertTriangle, Settings, LayoutList } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Pagination from '../../_components/Pagination';
 import RoleGuard from '../../_components/RoleGuard';
+import FeeOverrideModal from '@/components/finance/FeeOverrideModal';
+import InstallmentWizard from '@/components/finance/InstallmentWizard';
+import { IFeeInvoice } from '@/models/finance/FeeInvoice';
 
 interface Invoice {
     _id: string; invoiceNumber: string; studentName: string; rollNumber: string;
@@ -36,6 +39,8 @@ function FeeInvoicesClientContent() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [showPayModal, setShowPayModal] = useState<Invoice | null>(null);
+    const [showOverrideModal, setShowOverrideModal] = useState<Invoice | null>(null);
+    const [showInstallmentWizard, setShowInstallmentWizard] = useState<Invoice | null>(null);
     const [structures, setStructures] = useState<FeeStructure[]>([]);
     const [wallets, setWallets] = useState<any[]>([]);
     const [saving, setSaving] = useState(false);
@@ -218,14 +223,32 @@ function FeeInvoicesClientContent() {
                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColors[inv.status]}`}>{inv.status}</span>
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                        {inv.status !== 'PAID' && inv.status !== 'CANCELLED' && (
-                                            <RoleGuard>
-                                                <button onClick={() => { setShowPayModal(inv); setPayForm(prev => ({ ...prev, amount: inv.outstandingAmount, paymentMode: 'CASH', paymentDate: new Date().toISOString().split('T')[0] })); setConfirmOverpayment(false); }}
-                                                    className="inline-flex text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 transition-colors items-center gap-1">
-                                                    <IndianRupee size={11} /> Pay
-                                                </button>
-                                            </RoleGuard>
-                                        )}
+                                        <div className="flex justify-end gap-2">
+                                            {inv.status !== 'PAID' && inv.status !== 'CANCELLED' && (
+                                                <RoleGuard>
+                                                    <button onClick={() => { setShowPayModal(inv); setPayForm(prev => ({ ...prev, amount: inv.outstandingAmount, paymentMode: 'CASH', paymentDate: new Date().toISOString().split('T')[0] })); setConfirmOverpayment(false); }}
+                                                        className="inline-flex text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 transition-colors items-center gap-1">
+                                                        <IndianRupee size={11} /> Pay
+                                                    </button>
+                                                </RoleGuard>
+                                            )}
+                                            {inv.status === 'UNPAID' && (
+                                                <RoleGuard>
+                                                    <button onClick={() => setShowOverrideModal(inv)}
+                                                        className="inline-flex text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg hover:bg-indigo-100 transition-colors items-center gap-1">
+                                                        <Settings size={11} /> Customize
+                                                    </button>
+                                                </RoleGuard>
+                                            )}
+                                            {(inv.status === 'UNPAID' || inv.status === 'PARTIAL') && (
+                                                <RoleGuard>
+                                                    <button onClick={() => setShowInstallmentWizard(inv)}
+                                                        className="inline-flex text-xs bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-colors items-center gap-1">
+                                                        <LayoutList size={11} /> Split
+                                                    </button>
+                                                </RoleGuard>
+                                            )}
+                                        </div>
                                     </td>
                                 </motion.tr>
                             ))}
@@ -391,6 +414,67 @@ function FeeInvoicesClientContent() {
                         </form>
                     </motion.div>
                 </div>
+            )}
+
+            {/* Fee Override Modal */}
+            {showOverrideModal && (
+                <FeeOverrideModal
+                    isOpen={!!showOverrideModal}
+                    onClose={() => setShowOverrideModal(null)}
+                    invoice={showOverrideModal as any}
+                    onSave={async (updatedData) => {
+                        setSaving(true);
+                        try {
+                            const res = await fetch(`/api/finance/fee-invoices/${showOverrideModal._id}/override`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(updatedData),
+                            });
+                            if (!res.ok) throw new Error('Failed to override fee');
+                            fetchInvoices(statusParam, page);
+                            setShowOverrideModal(null);
+                        } catch (err: any) {
+                            setError(err.message);
+                        } finally {
+                            setSaving(false);
+                        }
+                    }}
+                />
+            )}
+
+            {/* Installment Wizard */}
+            {showInstallmentWizard && (
+                <InstallmentWizard
+                    isOpen={!!showInstallmentWizard}
+                    onClose={() => setShowInstallmentWizard(null)}
+                    invoiceTotal={showInstallmentWizard.outstandingAmount}
+                    studentId={showInstallmentWizard.rollNumber}
+                    onSave={async (installments) => {
+                        setSaving(true);
+                        try {
+                            const res = await fetch('/api/finance/installment-plans', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    feeInvoice: showInstallmentWizard._id,
+                                    studentId: showInstallmentWizard.rollNumber,
+                                    installments: installments.map((inst, i) => ({
+                                        installmentNumber: i + 1,
+                                        dueDate: inst.dueDate,
+                                        amount: inst.amount
+                                    }))
+                                }),
+                            });
+                            if (!res.ok) throw new Error('Failed to save installment plan');
+                            fetchInvoices(statusParam, page);
+                            setShowInstallmentWizard(null);
+                        } catch (err: any) {
+                            setError(err.message);
+                        } finally {
+                            setSaving(false);
+                        }
+                    }}
+                />
             )}
         </div>
     );
