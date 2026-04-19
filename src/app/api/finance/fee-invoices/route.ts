@@ -42,7 +42,7 @@ export const GET = withErrorHandler(async (req: Request) => {
 
     console.log('DEBUG: GET /api/finance/fee-invoices', { query, page, limit });
 
-    const [invoices, total] = await Promise.all([
+    const [invoicesData, total] = await Promise.all([
         FeeInvoice.find(query)
             .populate({
                 path: 'studentProfileId',
@@ -51,7 +51,11 @@ export const GET = withErrorHandler(async (req: Request) => {
             .populate({
                 path: 'feeStructureId',
                 select: 'semesterNumber totalAmount feeHeads',
-                populate: { path: 'batchId', select: 'year season programId' },
+                populate: { 
+                    path: 'batchId', 
+                    select: 'year season programId',
+                    populate: { path: 'programId', select: 'name code' }
+                },
             })
             .sort({ dueDate: 1 })
             .skip((page - 1) * limit)
@@ -59,6 +63,29 @@ export const GET = withErrorHandler(async (req: Request) => {
             .lean({ virtuals: true }),
         FeeInvoice.countDocuments(query),
     ]);
+
+    // Fetch next installment info for partial invoices
+    const invoices = await Promise.all(invoicesData.map(async (inv: any) => {
+        if (inv.status === 'PARTIAL') {
+            const plan = await mongoose.model('InstallmentPlan').findOne({ 
+                feeInvoice: inv._id, 
+                isCompleted: false 
+            }).lean();
+            
+            if (plan) {
+                // Find first unpaid installment
+                const nextInst = (plan as any).installments.find((i: any) => !i.isPaid);
+                return { 
+                    ...inv, 
+                    nextInstallment: nextInst ? {
+                        amount: nextInst.amount - nextInst.paidAmount,
+                        dueDate: nextInst.dueDate
+                    } : null
+                };
+            }
+        }
+        return inv;
+    }));
 
     console.log(`DEBUG: Found ${invoices.length} invoices. Total: ${total}`);
 

@@ -36,7 +36,7 @@ export class FinanceTransactionService {
         performedBy: string;
     }) {
         await dbConnect();
-        const session = await mongoose.startSession();
+        const session = await mongoose.connection.startSession();
         session.startTransaction();
 
         try {
@@ -184,7 +184,7 @@ export class FinanceTransactionService {
         performedBy: string;
     }) {
         await dbConnect();
-        const session = await mongoose.startSession();
+        const session = await mongoose.connection.startSession();
         session.startTransaction();
 
         try {

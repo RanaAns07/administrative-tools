@@ -15,6 +15,7 @@ interface Invoice {
     _id: string; invoiceNumber: string; studentName: string; rollNumber: string;
     program: string; semester: string; totalAmount: number; paidAmount: number;
     outstandingAmount: number; dueDate: string; status: string;
+    nextInstallment?: { amount: number; dueDate: string } | null;
 }
 
 const statusColors: Record<string, string> = {
@@ -109,7 +110,8 @@ function FeeInvoicesClientContent() {
                         paidAmount: raw.amountPaid || 0,
                         outstandingAmount: arrears,
                         dueDate: raw.dueDate,
-                        status: raw.status
+                        status: raw.status,
+                        nextInstallment: raw.nextInstallment
                     };
                 });
                 setInvoices(mapped);
@@ -269,14 +271,14 @@ function FeeInvoicesClientContent() {
                                         {activeTab === 'STANDARD' ? (
                                             <span>Rs {inv.totalAmount.toLocaleString('en-PK')}</span>
                                         ) : (
-                                            <span className="text-leads-blue">Rs {(inv.outstandingAmount / 2).toLocaleString('en-PK')}*</span>
+                                            <span className="text-leads-blue font-bold">Rs {(inv.nextInstallment?.amount || inv.outstandingAmount).toLocaleString('en-PK')}</span>
                                         )}
                                     </td>
                                     <td className="px-4 py-3 text-right font-mono text-xs text-green-700">Rs {inv.paidAmount.toLocaleString('en-PK')}</td>
                                     <td className="px-4 py-3 text-right font-mono text-xs font-bold text-leads-red">Rs {inv.outstandingAmount.toLocaleString('en-PK')}</td>
                                     <td className="px-4 py-3 text-xs text-gray-500 flex items-center gap-1">
-                                        {new Date() > new Date(inv.dueDate) && inv.status !== 'PAID' && <Clock size={12} className="text-red-400" />}
-                                        {new Date(inv.dueDate).toLocaleDateString('en-PK')}
+                                        {new Date() > new Date(inv.nextInstallment?.dueDate || inv.dueDate) && inv.status !== 'PAID' && <Clock size={12} className="text-red-400" />}
+                                        {new Date(inv.nextInstallment?.dueDate || inv.dueDate).toLocaleDateString('en-PK')}
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColors[inv.status]}`}>{inv.status}</span>
@@ -286,14 +288,14 @@ function FeeInvoicesClientContent() {
                                             {inv.status !== 'PAID' && inv.status !== 'CANCELLED' && (
                                                 <RoleGuard>
                                                     {activeTab === 'STANDARD' && inv.status === 'PENDING' ? (
-                                                        <button onClick={() => handleQuickVerify(inv, inv.outstandingAmount)} disabled={savingId === inv._id}
-                                                            className="inline-flex text-xs bg-emerald-600 text-white px-2.5 py-1 rounded-lg hover:bg-emerald-700 transition-colors items-center gap-1 shadow-sm disabled:opacity-50">
-                                                            {savingId === inv._id ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Verify Full
+                                                        <button onClick={() => { setShowPayModal(inv); setPayForm(prev => ({ ...prev, amount: inv.outstandingAmount, paymentMode: 'CASH', paymentDate: new Date().toISOString().split('T')[0] })); setConfirmOverpayment(false); }}
+                                                            className="inline-flex text-xs bg-emerald-600 text-white px-2.5 py-1 rounded-lg hover:bg-emerald-700 transition-colors items-center gap-1 shadow-sm">
+                                                            <Check size={11} /> Verify Full
                                                         </button>
                                                     ) : activeTab === 'INSTALLMENTS' && inv.status === 'PARTIAL' ? (
-                                                        <button onClick={() => handleQuickVerify(inv, inv.outstandingAmount / 2)} disabled={savingId === inv._id}
-                                                            className="inline-flex text-xs bg-leads-blue text-white px-2.5 py-1 rounded-lg hover:bg-blue-800 transition-colors items-center gap-1 shadow-sm disabled:opacity-50">
-                                                            {savingId === inv._id ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Verify Installment
+                                                        <button onClick={() => { setShowPayModal(inv); setPayForm(prev => ({ ...prev, amount: inv.nextInstallment?.amount || inv.outstandingAmount, paymentMode: 'CASH', paymentDate: new Date().toISOString().split('T')[0] })); setConfirmOverpayment(false); }}
+                                                            className="inline-flex text-xs bg-leads-blue text-white px-2.5 py-1 rounded-lg hover:bg-blue-800 transition-colors items-center gap-1 shadow-sm">
+                                                            <Check size={11} /> Verify Installment
                                                         </button>
                                                     ) : (
                                                         <button onClick={() => { setShowPayModal(inv); setPayForm(prev => ({ ...prev, amount: inv.outstandingAmount, paymentMode: 'CASH', paymentDate: new Date().toISOString().split('T')[0] })); setConfirmOverpayment(false); }}
