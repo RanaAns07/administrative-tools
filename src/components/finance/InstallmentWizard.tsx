@@ -100,7 +100,7 @@ export default function InstallmentWizard({ isOpen, onClose, invoiceTotal, stude
         <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-slate-900 to-slate-800 text-white">
           <div>
             <h2 className="text-2xl font-bold tracking-tight">Generate Installment Plan</h2>
-            <p className="text-slate-400 text-sm mt-1">Student: <span className="text-blue-300 font-mono">{studentId}</span> • Total: <span className="text-white font-bold">${invoiceTotal.toLocaleString()}</span></p>
+            <p className="text-slate-400 text-sm mt-1">Student: <span className="text-blue-300 font-mono">{studentId}</span> • Total: <span className="text-white font-bold">Rs {invoiceTotal.toLocaleString()}</span></p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
             <X className="w-6 h-6" />
@@ -140,7 +140,7 @@ export default function InstallmentWizard({ isOpen, onClose, invoiceTotal, stude
                   />
                 </div>
                 <div className="flex-1 relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">Rs</span>
                   <input
                     type="number"
                     step="0.01"
@@ -184,7 +184,7 @@ export default function InstallmentWizard({ isOpen, onClose, invoiceTotal, stude
               <div>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Amount to Allocate</p>
                 <p className={`text-2xl font-black ${isFullyAllocated ? 'text-green-600' : 'text-amber-600'}`}>
-                  ${remainingToAllocate.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  Rs {remainingToAllocate.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </p>
               </div>
             </div>
@@ -192,7 +192,7 @@ export default function InstallmentWizard({ isOpen, onClose, invoiceTotal, stude
             <div className="text-right">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Current Plan Total</p>
               <p className="text-2xl font-black text-slate-900">
-                ${allocatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                Rs {allocatedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>

@@ -104,14 +104,14 @@ export default function DepartmentalFinanceDashboard({ data }: DepartmentalFinan
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <KPICard 
           title="Total Expected" 
-          value={`$${kpis.totalExpected.toLocaleString()}`} 
+          value={`Rs ${kpis.totalExpected.toLocaleString()}`} 
           icon={<DollarSign className="w-6 h-6 text-blue-600" />}
           trend={`${kpis.collectionRate.toFixed(1)}% Projected`}
           trendUp={true}
         />
         <KPICard 
           title="Actual Collected" 
-          value={`$${kpis.totalEarned.toLocaleString()}`} 
+          value={`Rs ${kpis.totalEarned.toLocaleString()}`} 
           icon={<TrendingUp className="w-6 h-6 text-emerald-600" />}
           trend="Real-time Revenue"
           trendUp={true}
@@ -119,7 +119,7 @@ export default function DepartmentalFinanceDashboard({ data }: DepartmentalFinan
         />
         <KPICard 
           title="Outstanding Arrears" 
-          value={`$${(kpis.totalExpected - kpis.totalEarned).toLocaleString()}`} 
+          value={`Rs ${(kpis.totalExpected - kpis.totalEarned).toLocaleString()}`} 
           icon={<Users className="w-6 h-6 text-amber-600" />}
           trend="Action Required"
           trendUp={false}
@@ -127,7 +127,7 @@ export default function DepartmentalFinanceDashboard({ data }: DepartmentalFinan
         />
         <KPICard 
           title="Total Fines" 
-          value={`$${kpis.totalFines.toLocaleString()}`} 
+          value={`Rs ${kpis.totalFines.toLocaleString()}`} 
           icon={<AlertTriangle className="w-6 h-6 text-purple-600" />}
           trend="Penalty Income"
           trendUp={true}
@@ -184,16 +184,16 @@ export default function DepartmentalFinanceDashboard({ data }: DepartmentalFinan
                       <div className="text-[10px] text-gray-400 font-mono">{dept._id}</div>
                     </td>
                     <td className="px-6 py-4 text-right font-semibold text-gray-600">
-                      ${dept.expectedRevenue.toLocaleString()}
+                      Rs {dept.expectedRevenue.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <span className="font-bold text-emerald-600">${dept.actualCollected.toLocaleString()}</span>
+                      <span className="font-bold text-emerald-600">Rs {dept.actualCollected.toLocaleString()}</span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <span className="font-bold text-amber-600">${dept.pendingReceivables.toLocaleString()}</span>
+                      <span className="font-bold text-amber-600">Rs {dept.pendingReceivables.toLocaleString()}</span>
                     </td>
                     <td className="px-6 py-4 text-right font-medium text-purple-600">
-                      ${dept.totalFinesCollected.toLocaleString()}
+                      Rs {dept.totalFinesCollected.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-right">
                       {isHighRisk ? (

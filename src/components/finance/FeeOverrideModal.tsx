@@ -170,7 +170,7 @@ export default function FeeOverrideModal({ isOpen, onClose, invoice, onSave }: F
           <div className="text-right">
             <p className="text-xs text-gray-500 font-medium uppercase tracking-tighter">Total Custom Amount</p>
             <p className={`text-2xl font-black ${isCustomFee ? 'text-gray-900' : 'text-gray-300'}`}>
-              ${runningTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              Rs {runningTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </p>
           </div>
           <div className="flex gap-3">
