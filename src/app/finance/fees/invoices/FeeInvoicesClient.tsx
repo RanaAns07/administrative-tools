@@ -18,7 +18,7 @@ interface Invoice {
 }
 
 const statusColors: Record<string, string> = {
-    UNPAID: 'bg-gray-100 text-gray-700', PARTIAL: 'bg-yellow-100 text-yellow-700',
+    PENDING: 'bg-gray-100 text-gray-700', PARTIAL: 'bg-yellow-100 text-yellow-700',
     PAID: 'bg-green-100 text-green-700', OVERDUE: 'bg-red-100 text-red-700',
     WRITTEN_OFF: 'bg-purple-100 text-purple-700', CANCELLED: 'bg-gray-100 text-gray-400',
 };
@@ -175,7 +175,7 @@ function FeeInvoicesClientContent() {
             {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex gap-2">{error}<button className="ml-auto" onClick={() => setError(null)}><X size={12} /></button></div>}
 
             <div className="flex flex-wrap gap-2">
-                {['', 'UNPAID', 'PARTIAL', 'PAID', 'OVERDUE'].map(s => (
+                {['', 'PENDING', 'PARTIAL', 'PAID', 'OVERDUE'].map(s => (
                     <button key={s} onClick={() => setFilterStatus(s)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${statusParam === s ? 'bg-leads-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                         {s || 'All'}
@@ -232,7 +232,7 @@ function FeeInvoicesClientContent() {
                                                     </button>
                                                 </RoleGuard>
                                             )}
-                                            {inv.status === 'UNPAID' && (
+                                            {inv.status === 'PENDING' && (
                                                 <RoleGuard>
                                                     <button onClick={() => setShowOverrideModal(inv)}
                                                         className="inline-flex text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg hover:bg-indigo-100 transition-colors items-center gap-1">
@@ -240,7 +240,7 @@ function FeeInvoicesClientContent() {
                                                     </button>
                                                 </RoleGuard>
                                             )}
-                                            {(inv.status === 'UNPAID' || inv.status === 'PARTIAL') && (
+                                            {(inv.status === 'PENDING' || inv.status === 'PARTIAL') && (
                                                 <RoleGuard>
                                                     <button onClick={() => setShowInstallmentWizard(inv)}
                                                         className="inline-flex text-xs bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-colors items-center gap-1">
