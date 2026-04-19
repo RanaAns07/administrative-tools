@@ -271,14 +271,14 @@ function FeeInvoicesClientContent() {
                                     </td>
                                     <td className="px-6 py-5 text-right font-black text-slate-700">
                                         {activeTab === 'STANDARD' ? (
-                                            <span>Rs {inv.totalAmount.toLocaleString()}</span>
+                                            <span>Rs {(inv.totalAmount || 0).toLocaleString()}</span>
                                         ) : (
-                                            <span className="text-blue-600">Rs {(inv.outstandingAmount / 2).toLocaleString()}*</span> 
+                                            <span className="text-blue-600">Rs {((inv.outstandingAmount || 0) / 2).toLocaleString()}*</span> 
                                         )}
                                     </td>
                                     <td className="px-6 py-5 text-right">
-                                        <span className={`font-black ${inv.outstandingAmount > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                            Rs {inv.outstandingAmount.toLocaleString()}
+                                        <span className={`font-black ${(inv.outstandingAmount || 0) > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                            Rs {(inv.outstandingAmount || 0).toLocaleString()}
                                         </span>
                                     </td>
                                     <td className="px-6 py-5">
