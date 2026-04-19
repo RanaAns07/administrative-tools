@@ -2,17 +2,11 @@ import mongoose, { ClientSession, Types } from 'mongoose';
 import FeeInvoice, { IFeeInvoice } from '@/models/finance/FeeInvoice';
 import FeePayment, { IFeePayment } from '@/models/finance/FeePayment';
 import InstallmentPlan, { IInstallmentPlan } from '@/models/finance/InstallmentPlan';
+import Wallet from '@/models/finance/Wallet';
+import Transaction from '@/models/finance/Transaction';
+import StudentAdvanceBalance from '@/models/finance/StudentAdvanceBalance';
 import dbConnect from '@/lib/mongodb';
-
-/**
- * Custom Exception for financial overpayment scenarios.
- */
-export class OverpaymentException extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'OverpaymentException';
-    }
-}
+import { FinanceError } from './FinanceError';
 
 /**
  * FinanceTransactionService
@@ -23,86 +17,110 @@ export class OverpaymentException extends Error {
 export class FinanceTransactionService {
 
     /**
-     * Processes a fee payment with a strict cascading allocation algorithm:
-     * 1. Pay pending penalties first.
-     * 2. Pay installments in chronological order (if plan exists).
-     * 3. Update invoice and installment statuses dynamically.
-     * 
-     * @param payload Payment data including invoice ID, amount, and metadata.
+     * Records a fee payment from a student.
+     * 1. Validates invoice and wallet.
+     * 2. Updates wallet balance ($inc).
+     * 3. Allocates cash to penalties first, then principal (and installments).
+     * 4. Handles overpayment by crediting StudentAdvanceBalance.
+     * 5. Creates Transaction and FeePayment records.
      */
-    static async processFeePayment(payload: {
-        invoiceId: string | Types.ObjectId;
+    static async recordFeePayment(payload: {
+        invoiceId: string;
         amount: number;
-        paymentMode: string;
-        performedBy: string;
+        walletId: string;
+        paymentMethod: string;
+        chequeNumber?: string;
+        bankRef?: string;
         date?: Date;
+        notes?: string;
+        performedBy: string;
     }) {
         await dbConnect();
         const session = await mongoose.startSession();
         session.startTransaction();
 
         try {
-            const invoice = await FeeInvoice.findById(payload.invoiceId).session(session);
-            if (!invoice) {
-                throw new Error(`Invoice ${payload.invoiceId} not found.`);
-            }
+            // 1. Validate Core Entities
+            const [invoice, wallet] = await Promise.all([
+                FeeInvoice.findById(payload.invoiceId).session(session),
+                Wallet.findById(payload.walletId).session(session)
+            ]);
 
-            const currentArrears = invoice.getArrears();
-            if (payload.amount > currentArrears) {
-                throw new OverpaymentException(
-                    `Overpayment detected. Payable: ${currentArrears}, Received: ${payload.amount}`
-                );
-            }
+            if (!invoice) throw new FinanceError('INVOICE_NOT_FOUND', `Invoice ${payload.invoiceId} not found.`);
+            if (!wallet || !wallet.isActive) throw new FinanceError('WALLET_NOT_FOUND', 'Wallet is invalid or inactive.');
+            if (invoice.status === 'PAID') throw new FinanceError('INVOICE_ALREADY_PAID', 'This invoice is already fully paid.');
 
-            let remainingCash = payload.amount;
+            const paymentDate = payload.date || new Date();
+            const arrearsBefore = invoice.getArrears();
             
-            // 1. Penalty Allocation
-            const pendingPenalty = invoice.penaltyAmount - invoice.penaltyPaid;
-            const allocatedPenalty = Math.min(remainingCash, pendingPenalty);
-            remainingCash -= allocatedPenalty;
+            // 2. Update Wallet Balance
+            await Wallet.updateOne(
+                { _id: wallet._id },
+                { $inc: { currentBalance: payload.amount } },
+                { session }
+            );
 
-            // 2. Principal Allocation (Installments vs Straight Payment)
-            let allocatedPrincipal = 0;
+            // 3. Cascading Allocation Logic
+            let remainingToAllocate = payload.amount;
+            
+            // 3a. Pay Penalty First
+            const pendingPenalty = invoice.penaltyAmount - invoice.penaltyPaid;
+            const penaltyAllocated = Math.min(remainingToAllocate, pendingPenalty);
+            remainingToAllocate -= penaltyAllocated;
+
+            // 3b. Pay Principal (Installments vs Straight)
+            let principalAllocated = 0;
+            const excessToCredit = Math.max(0, remainingToAllocate - arrearsBefore + pendingPenalty);
+            const actualPrincipalToPay = Math.min(remainingToAllocate, arrearsBefore - pendingPenalty);
+            
+            remainingToAllocate -= actualPrincipalToPay;
+            principalAllocated = actualPrincipalToPay;
+
+            // Update Installment Plan if it exists
             const installmentPlan = await InstallmentPlan.findOne({
                 feeInvoice: invoice._id,
                 isCompleted: false
             }).session(session);
 
             if (installmentPlan) {
-                // Cascade remaining cash through installments
+                let tempPrincipal = principalAllocated;
                 for (const inst of installmentPlan.installments) {
-                    if (remainingCash <= 0) break;
+                    if (tempPrincipal <= 0) break;
                     if (inst.isPaid) continue;
 
                     const instArrears = inst.amount - inst.paidAmount;
-                    const toApply = Math.min(remainingCash, instArrears);
+                    const toApply = Math.min(tempPrincipal, instArrears);
 
                     inst.paidAmount += toApply;
-                    remainingCash -= toApply;
-                    allocatedPrincipal += toApply;
+                    tempPrincipal -= toApply;
 
                     if (inst.paidAmount >= inst.amount) {
                         inst.isPaid = true;
-                        inst.paidAt = payload.date || new Date();
+                        inst.paidAt = paymentDate;
                     }
                 }
-                
-                // Check if all installments are now completed
                 installmentPlan.isCompleted = installmentPlan.installments.every(i => i.isPaid);
                 await installmentPlan.save({ session });
-            } else {
-                // No installment plan, apply directly to invoice principal
-                allocatedPrincipal = remainingCash;
-                remainingCash = 0;
             }
 
-            // 3. Update Invoice State
-            invoice.penaltyPaid += allocatedPenalty;
-            invoice.amountPaid += allocatedPrincipal;
+            // 4. Handle Overpayment (Credit to StudentAdvanceBalance)
+            if (excessToCredit > 0) {
+                await StudentAdvanceBalance.updateOne(
+                    { studentProfileId: invoice.studentProfileId },
+                    { 
+                        $inc: { balance: excessToCredit },
+                        $set: { lastUpdated: new Date() } 
+                    },
+                    { upsert: true, session }
+                );
+            }
+
+            // 5. Update Invoice Totals & Status
+            invoice.penaltyPaid += penaltyAllocated;
+            invoice.amountPaid += principalAllocated;
             
-            // Derive Status (No pre-save hooks)
-            const finalArrears = invoice.getArrears();
-            if (finalArrears <= 0) {
+            const remainingArrears = invoice.getArrears();
+            if (remainingArrears <= 0) {
                 invoice.status = 'PAID';
             } else if (invoice.amountPaid > 0 || invoice.penaltyPaid > 0) {
                 invoice.status = 'PARTIAL';
@@ -110,23 +128,43 @@ export class FinanceTransactionService {
 
             await invoice.save({ session });
 
-            // 4. Record Payment Receipt
-            const [payment] = await FeePayment.create([{
+            // 6. Create Transaction (The Khatta Record)
+            const [tx] = await Transaction.create([{
+                txType: 'FEE_PAYMENT',
+                amount: payload.amount,
+                date: paymentDate,
+                walletId: wallet._id,
+                referenceModel: 'FeeInvoice',
+                referenceId: invoice._id.toString(),
+                notes: payload.notes,
+                performedBy: new Types.ObjectId(payload.performedBy)
+            }], { session });
+
+            // 7. Create FeePayment (The Student Receipt)
+            const [receipt] = await FeePayment.create([{
                 receiptNumber: `RCP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
                 feeInvoice: invoice._id,
                 amount: payload.amount,
                 allocation: {
-                    principalAmount: allocatedPrincipal,
-                    penaltyAmount: allocatedPenalty
+                    principalAmount: principalAllocated,
+                    penaltyAmount: penaltyAllocated
                 },
-                paymentMode: payload.paymentMode,
-                paymentDate: payload.date || new Date(),
+                paymentMode: payload.paymentMethod,
+                paymentDate: paymentDate,
                 receivedBy: payload.performedBy,
-                status: 'APPROVED'
+                status: 'APPROVED',
+                notes: payload.notes
             }], { session });
 
             await session.commitTransaction();
-            return { invoice, payment };
+            
+            return {
+                receiptNumber: receipt.receiptNumber,
+                invoiceStatus: invoice.status,
+                advanceApplied: 0,
+                excessCredited: excessToCredit,
+                transactionId: tx._id
+            };
 
         } catch (error) {
             await session.abortTransaction();
@@ -137,13 +175,95 @@ export class FinanceTransactionService {
     }
 
     /**
+     * Automatically applies a student's advance balance to a new invoice.
+     */
+    static async recordAdvanceApplication(payload: {
+        invoiceId: string;
+        amount: number;
+        walletId: string; // Used for transaction record even if no cash moves
+        performedBy: string;
+    }) {
+        await dbConnect();
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            const invoice = await FeeInvoice.findById(payload.invoiceId).session(session);
+            if (!invoice) throw new FinanceError('INVOICE_NOT_FOUND');
+
+            const advance = await StudentAdvanceBalance.findOne({ studentProfileId: invoice.studentProfileId }).session(session);
+            if (!advance || advance.balance <= 0) {
+                throw new FinanceError('INSUFFICIENT_BALANCE', 'Student has no advance balance to apply.');
+            }
+
+            const arrears = invoice.getArrears();
+            const amountToApply = Math.min(advance.balance, arrears, payload.amount);
+
+            if (amountToApply <= 0) {
+                await session.abortTransaction();
+                return { amountApplied: 0, invoiceStatus: invoice.status };
+            }
+
+            // Deduct from advance
+            advance.balance -= amountToApply;
+            advance.lastUpdated = new Date();
+            await advance.save({ session });
+
+            // Apply to invoice (Principal only, we don't auto-apply advance to penalties usually)
+            invoice.amountPaid += amountToApply;
+            invoice.discountFromAdvance += amountToApply;
+            
+            if (invoice.getArrears() <= 0) {
+                invoice.status = 'PAID';
+            } else {
+                invoice.status = 'PARTIAL';
+            }
+            await invoice.save({ session });
+
+            // Record Adjustment Transaction
+            const [tx] = await Transaction.create([{
+                txType: 'STUDENT_ADVANCE_DEDUCTION',
+                amount: amountToApply,
+                date: new Date(),
+                walletId: new Types.ObjectId(payload.walletId),
+                referenceModel: 'FeeInvoice',
+                referenceId: invoice._id.toString(),
+                notes: 'Automatic advance balance application',
+                performedBy: new Types.ObjectId(payload.performedBy)
+            }], { session });
+
+            await session.commitTransaction();
+            return {
+                amountApplied: amountToApply,
+                invoiceStatus: invoice.status,
+                transactionId: tx._id
+            };
+
+        } catch (error) {
+            await session.abortTransaction();
+            throw error;
+        } finally {
+            session.endSession();
+        }
+    }
+
+    /**
+     * Backward compatibility helper
+     */
+    static async processFeePayment(payload: any) {
+        return this.recordFeePayment({
+            ...payload,
+            paymentMethod: payload.paymentMode
+        });
+    }
+
+    /**
      * Generates a real-time, departmental finance report using a multi-stage aggregation pipeline.
      */
     static async generateDepartmentalFinanceReport() {
         await dbConnect();
 
         const pipeline: any[] = [
-            // 1. Join with StudentProfile
             {
                 $lookup: {
                     from: 'university_students',
@@ -153,8 +273,6 @@ export class FinanceTransactionService {
                 }
             },
             { $unwind: '$student' },
-
-            // 2. Deep Populate: Student -> Batch -> Program -> Department
             {
                 $lookup: {
                     from: 'university_batches',
@@ -182,8 +300,6 @@ export class FinanceTransactionService {
                 }
             },
             { $unwind: '$department' },
-
-            // 3. Group by Department
             {
                 $group: {
                     _id: '$department._id',
@@ -195,12 +311,9 @@ export class FinanceTransactionService {
                     totalFinesImposed: { $sum: '$penaltyAmount' },
                     totalFinesCollected: { $sum: '$penaltyPaid' },
                     totalStudents: { $addToSet: '$studentProfileId' },
-                    // Support for counting active installment plans later
                     invoiceIds: { $push: '$_id' }
                 }
             },
-
-            // 4. Calculate Pending and Fines
             {
                 $project: {
                     departmentName: 1,
@@ -214,11 +327,9 @@ export class FinanceTransactionService {
                     invoiceIds: 1
                 }
             },
-
-            // 5. Lookup InstallmentPlans to count active ones for these invoices
             {
                 $lookup: {
-                    from: 'installmentplans', // Assuming collection name
+                    from: 'installmentplans',
                     let: { ids: '$invoiceIds' },
                     pipeline: [
                         { 
@@ -236,8 +347,6 @@ export class FinanceTransactionService {
                     as: 'installments'
                 }
             },
-
-            // 6. Final Projection
             {
                 $project: {
                     departmentName: 1,

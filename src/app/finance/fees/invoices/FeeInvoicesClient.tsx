@@ -1,253 +1,340 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useEffect, useState, useMemo, Suspense } from 'react';
-import { motion } from 'framer-motion';
-import { Users, Plus, Loader2, X, Check, IndianRupee, Clock, AlertTriangle, Settings, LayoutList } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Users, Plus, Loader2, X, Check, IndianRupee, Clock, 
+  AlertTriangle, Settings, LayoutList, CheckCircle, 
+  ChevronRight, MoreVertical, CreditCard, Filter, 
+  Download, Calendar, ArrowRight
+} from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+
 import Pagination from '../../_components/Pagination';
 import RoleGuard from '../../_components/RoleGuard';
 import FeeOverrideModal from '@/components/finance/FeeOverrideModal';
 import InstallmentWizard from '@/components/finance/InstallmentWizard';
 import { IFeeInvoice } from '@/models/finance/FeeInvoice';
 
+/**
+ * FeeInvoicesClient Component
+ * 
+ * Optimized for university accountants to handle high-volume fee processing.
+ * Features a dual-tab layout to separate standard submissions from active installment plans.
+ * Implements "Quick Verify" buttons that rely on the backend cascading payment engine.
+ */
+
 interface Invoice {
-    _id: string; invoiceNumber: string; studentName: string; rollNumber: string;
-    program: string; semester: string; totalAmount: number; paidAmount: number;
-    outstandingAmount: number; dueDate: string; status: string;
+    _id: string;
+    invoiceNumber: string;
+    studentName: string;
+    rollNumber: string;
+    program: string;
+    semester: string;
+    totalAmount: number;
+    paidAmount: number;
+    outstandingAmount: number;
+    dueDate: string;
+    status: 'PENDING' | 'PARTIAL' | 'PAID' | 'OVERDUE' | 'WAIVED';
+    studentProfileId?: string;
 }
 
 const statusColors: Record<string, string> = {
-    PENDING: 'bg-gray-100 text-gray-700', PARTIAL: 'bg-yellow-100 text-yellow-700',
-    PAID: 'bg-green-100 text-green-700', OVERDUE: 'bg-red-100 text-red-700',
-    WRITTEN_OFF: 'bg-purple-100 text-purple-700', CANCELLED: 'bg-gray-100 text-gray-400',
+    PENDING: 'bg-gray-100 text-gray-700',
+    PARTIAL: 'bg-amber-100 text-amber-700',
+    PAID: 'bg-emerald-100 text-emerald-700',
+    OVERDUE: 'bg-red-100 text-red-700',
+    WAIVED: 'bg-purple-100 text-purple-700',
 };
-
-interface FeeStructure { _id: string; programName: string; semester: string; academicYear: string; totalAmount: number; }
 
 function FeeInvoicesClientContent() {
     const router = useRouter();
-    const pathname = usePathname();
     const searchParams = useSearchParams();
-
     const page = parseInt(searchParams.get('page') || '1');
-    const statusParam = searchParams.get('status') || '';
-
+    
+    // UI State
+    const [activeTab, setActiveTab] = useState<'STANDARD' | 'INSTALLMENTS'>('STANDARD');
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [totalCount, setTotalCount] = useState(0);
     const [totalPages, setTotalPages] = useState(1);
     const [loading, setLoading] = useState(true);
-    const [showModal, setShowModal] = useState(false);
-    const [showPayModal, setShowPayModal] = useState<Invoice | null>(null);
+    const [saving, setSaving] = useState<string | null>(null); // Stores the ID of the invoice being processed
+    const [error, setError] = useState<string | null>(null);
+    
+    // Modal State
+    const [showModal, setShowModal] = useState(false); // New Invoice
     const [showOverrideModal, setShowOverrideModal] = useState<Invoice | null>(null);
     const [showInstallmentWizard, setShowInstallmentWizard] = useState<Invoice | null>(null);
-    const [structures, setStructures] = useState<FeeStructure[]>([]);
     const [wallets, setWallets] = useState<any[]>([]);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [selectedActionRow, setSelectedActionRow] = useState<string | null>(null);
 
-    // Checkbox state for overpayment confirmation
-    const [confirmOverpayment, setConfirmOverpayment] = useState(false);
-
-    const [form, setForm] = useState({ studentId: '', studentName: '', rollNumber: '', feeStructureId: '', dueDate: '' });
-    const [payForm, setPayForm] = useState({ amount: 0, paymentMode: 'CASH', paymentDate: new Date().toISOString().split('T')[0], walletId: '' });
-
-    const fetchInvoices = (status = '', pageNum = 1) => {
+    const fetchInvoices = async () => {
         setLoading(true);
-        const qs = new URLSearchParams();
-        if (status) qs.set('status', status);
-        qs.set('page', pageNum.toString());
-        qs.set('limit', '50');
-
-        fetch(`/api/finance/fee-invoices?${qs.toString()}`)
-            .then(r => r.json()).then(d => {
-                const mapped = (d.invoices || []).map((raw: any) => {
-                    const payable = raw.totalAmount - (raw.discountAmount || 0) - (raw.discountFromAdvance || 0) + (raw.penaltyAmount || 0);
-                    const arrears = Math.max(0, payable - (raw.amountPaid || 0));
-
-                    return {
-                        _id: raw._id,
-                        invoiceNumber: raw._id.substring(raw._id.length - 6).toUpperCase(),
-                        studentName: raw.studentProfileId?.name || 'Unknown',
-                        rollNumber: raw.studentProfileId?.registrationNumber || 'N/A',
-                        program: raw.feeStructureId?.batchId?.programId?.name || 'Unknown',
-                        semester: raw.semesterNumber?.toString() || '',
-                        totalAmount: raw.totalAmount,
-                        paidAmount: raw.amountPaid || 0,
-                        outstandingAmount: arrears,
-                        dueDate: raw.dueDate,
-                        status: raw.status
-                    };
-                });
-                setInvoices(mapped);
-                setTotalCount(d.total || 0);
-                setTotalPages(Math.ceil((d.total || 0) / 50));
-            })
-            .catch(e => setError(e.message)).finally(() => setLoading(false));
-    };
-
-    useEffect(() => { fetchInvoices(statusParam, page); }, [statusParam, page]);
-    useEffect(() => {
-        fetch('/api/finance/fee-structures').then(r => r.json()).then(setStructures);
-        fetch('/api/finance/wallets').then(r => r.json()).then(w => {
-            setWallets(w);
-            if (w?.length > 0) setPayForm(prev => ({ ...prev, walletId: w[0]._id }));
-        });
-    }, []);
-
-    const setFilterStatus = (s: string) => {
-        const params = new URLSearchParams(searchParams.toString());
-        if (s) params.set('status', s);
-        else params.delete('status');
-        params.set('page', '1');
-        router.push(`${pathname}?${params.toString()}`);
-    };
-
-    const handleCreate = async (e: React.FormEvent) => {
-        e.preventDefault(); setSaving(true); setError(null);
         try {
-            const res = await fetch('/api/finance/fee-invoices', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-                    studentProfileId: form.studentId, // Map state to API expectation
-                    feeStructureId: form.feeStructureId,
-                    dueDate: form.dueDate
-                }),
-            });
-
-            const textResponse = await res.text();
-            let data;
-            try {
-                data = JSON.parse(textResponse);
-            } catch (e) {
-                console.error("Non-JSON Response Payload:", textResponse);
-                throw new Error("Server returned an invalid or HTML response. Check server logs for a crash trace.");
+            // We fetch PARTIAL and PENDING for both views and filter locally or via query
+            const res = await fetch(`/api/finance/fee-invoices?page=${page}&limit=50`);
+            const data = await res.json();
+            if (res.ok) {
+                setInvoices(data.invoices);
+                setTotalCount(data.total);
+                setTotalPages(data.totalPages || 1);
             }
-
-            if (!res.ok) throw new Error(data.error || "Failed to create invoice");
-
-            setShowModal(false); fetchInvoices(statusParam, page);
-            setForm({ studentId: '', studentName: '', rollNumber: '', feeStructureId: '', dueDate: '' });
-        } catch (err: any) { setError(err.message); }
-        finally { setSaving(false); }
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const handlePayment = async (e: React.FormEvent) => {
-        e.preventDefault(); if (!showPayModal) return;
-        setSaving(true); setError(null);
+    const fetchWallets = async () => {
+        try {
+            const res = await fetch('/api/finance/wallets');
+            if (res.ok) {
+                const data = await res.json();
+                setWallets(data.filter((w: any) => w.isActive));
+            }
+        } catch (err) { }
+    };
+
+    useEffect(() => {
+        fetchInvoices();
+        fetchWallets();
+    }, [page]);
+
+    /**
+     * Quick Verify Function
+     * Automatically posts the required amount to the backend.
+     * The backend handles the cascading logic (penalties -> installments -> principal).
+     */
+    const handleQuickVerify = async (inv: Invoice, amount: number) => {
+        if (wallets.length === 0) {
+            setError("No active wallet found to receive payment.");
+            return;
+        }
+
+        setSaving(inv._id);
+        setError(null);
+
         try {
             const res = await fetch('/api/finance/fee-payments', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    invoiceId: showPayModal._id,
-                    amount: payForm.amount,
-                    walletId: payForm.walletId,
-                    paymentMethod: payForm.paymentMode,
-                    date: payForm.paymentDate
+                    invoiceId: inv._id,
+                    amount: amount,
+                    walletId: wallets[0]._id, // Uses the primary collection wallet
+                    paymentMethod: 'CASH',
+                    date: new Date().toISOString(),
+                    notes: `Quick verified via Accountant Dashboard (${activeTab} view)`
                 }),
             });
+
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error);
-            setShowPayModal(null); setConfirmOverpayment(false); fetchInvoices(statusParam, page);
-        } catch (err: any) { setError(err.message); }
-        finally { setSaving(false); }
+            if (!res.ok) throw new Error(data.error || "Payment verification failed");
+
+            // Refresh data to reflect updated balances and status
+            await fetchInvoices();
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setSaving(null);
+        }
     };
 
-    // Derived state for overpayment warning
-    const isOverpaying = showPayModal ? payForm.amount > showPayModal.outstandingAmount : false;
-    const overpaymentAmount = isOverpaying && showPayModal ? payForm.amount - showPayModal.outstandingAmount : 0;
-    const canSubmitPayment = saving ? false : (isOverpaying ? confirmOverpayment : payForm.amount > 0);
+    // Filtered data based on Tab
+    const filteredInvoices = useMemo(() => {
+        if (activeTab === 'STANDARD') {
+            return invoices.filter(inv => inv.status === 'PENDING' || inv.status === 'PAID' || inv.status === 'OVERDUE');
+        } else {
+            // Installments view shows PARTIAL (Active Plans) or anyone with an installment hint
+            return invoices.filter(inv => inv.status === 'PARTIAL');
+        }
+    }, [invoices, activeTab]);
 
     return (
-        <div className="space-y-5 flex flex-col min-h-full">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-6 min-h-screen bg-gray-50/30 p-4 sm:p-6 lg:p-8">
+            {/* Header Area */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-xl font-bold text-leads-blue flex items-center gap-2"><Users size={22} /> Fee Invoices</h1>
-                    <p className="text-xs text-gray-500 mt-0.5">Student fee billing · {totalCount} total invoices</p>
+                    <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+                        <CreditCard className="w-8 h-8 text-blue-600" />
+                        Fee Ledger
+                    </h1>
+                    <p className="text-sm text-slate-500 font-medium">Manage university collections and installment schedules.</p>
                 </div>
-                <RoleGuard>
-                    <button onClick={() => setShowModal(true)}
-                        className="flex items-center gap-2 bg-leads-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-800 shadow-sm">
-                        <Plus size={16} /> New Invoice
+                
+                <div className="flex items-center gap-3">
+                    <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm">
+                        <Download className="w-4 h-4" />
+                        Export
                     </button>
-                </RoleGuard>
+                    <RoleGuard>
+                        <button 
+                            onClick={() => setShowModal(true)}
+                            className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-black hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Issue Invoice
+                        </button>
+                    </RoleGuard>
+                </div>
             </div>
 
-            {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex gap-2">{error}<button className="ml-auto" onClick={() => setError(null)}><X size={12} /></button></div>}
+            {/* Error Display */}
+            <AnimatePresence>
+                {error && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl flex items-center justify-between"
+                    >
+                        <div className="flex items-center gap-3">
+                            <AlertTriangle className="w-5 h-5 text-red-500" />
+                            <span className="text-sm font-semibold">{error}</span>
+                        </div>
+                        <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            <div className="flex flex-wrap gap-2">
-                {['', 'PENDING', 'PARTIAL', 'PAID', 'OVERDUE'].map(s => (
-                    <button key={s} onClick={() => setFilterStatus(s)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${statusParam === s ? 'bg-leads-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                        {s || 'All'}
-                    </button>
-                ))}
+            {/* Tab Navigation */}
+            <div className="flex p-1 bg-slate-200/50 rounded-2xl w-full max-w-md shadow-inner">
+                <button
+                    onClick={() => setActiveTab('STANDARD')}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all ${
+                        activeTab === 'STANDARD' 
+                        ? 'bg-white text-blue-600 shadow-md scale-[1.02]' 
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    Standard Submissions
+                </button>
+                <button
+                    onClick={() => setActiveTab('INSTALLMENTS')}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all ${
+                        activeTab === 'INSTALLMENTS' 
+                        ? 'bg-white text-blue-600 shadow-md scale-[1.02]' 
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    Active Installments
+                </button>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden border-b-0">
-                <div className="overflow-x-auto border-b border-gray-200">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-gray-50 border-b border-gray-100 text-xs uppercase text-gray-500 font-semibold tracking-wider">
-                            <tr>
-                                <th className="px-4 py-3">Invoice #</th>
-                                <th className="px-4 py-3">Student</th>
-                                <th className="px-4 py-3">Roll #</th>
-                                <th className="px-4 py-3">Program</th>
-                                <th className="px-4 py-3 text-right">Total</th>
-                                <th className="px-4 py-3 text-right">Paid</th>
-                                <th className="px-4 py-3 text-right">Outstanding</th>
-                                <th className="px-4 py-3">Due Date</th>
-                                <th className="px-4 py-3 text-center">Status</th>
-                                <th className="px-4 py-3 text-right">Action</th>
+            {/* Main Content Table */}
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="bg-slate-50/50 border-b border-slate-100">
+                                <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">Student Details</th>
+                                <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest text-right">
+                                    {activeTab === 'STANDARD' ? 'Total Fee' : 'Current Installment'}
+                                </th>
+                                <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest text-right">
+                                    {activeTab === 'STANDARD' ? 'Outstanding' : 'Total Remaining'}
+                                </th>
+                                <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest">
+                                    {activeTab === 'STANDARD' ? 'Status' : 'Next Due'}
+                                </th>
+                                <th className="px-6 py-5 text-xs font-black text-slate-400 uppercase tracking-widest text-right">Action</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-50">
+                        <tbody className="divide-y divide-slate-50">
                             {loading ? (
-                                <tr><td colSpan={10} className="py-12 text-center"><Loader2 className="animate-spin mx-auto text-gray-400" size={22} /></td></tr>
-                            ) : invoices.length === 0 ? (
-                                <tr><td colSpan={10} className="py-10 text-center text-gray-400 text-sm">No fee invoices found.</td></tr>
-                            ) : invoices.map((inv, i) => (
-                                <motion.tr key={inv._id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }}
-                                    className="hover:bg-blue-50/20 transition-colors">
-                                    <td className="px-4 py-3 font-mono text-xs font-semibold text-leads-blue">{inv.invoiceNumber}</td>
-                                    <td className="px-4 py-3 font-medium text-gray-800 text-sm">{inv.studentName}</td>
-                                    <td className="px-4 py-3 text-xs text-gray-600">{inv.rollNumber}</td>
-                                    <td className="px-4 py-3 text-xs text-gray-500 max-w-[120px] truncate">{inv.program}</td>
-                                    <td className="px-4 py-3 text-right font-mono text-xs">{inv.totalAmount.toLocaleString('en-PK')}</td>
-                                    <td className="px-4 py-3 text-right font-mono text-xs text-green-700">{inv.paidAmount.toLocaleString('en-PK')}</td>
-                                    <td className="px-4 py-3 text-right font-mono text-xs font-bold text-leads-red">{inv.outstandingAmount.toLocaleString('en-PK')}</td>
-                                    <td className="px-4 py-3 text-xs text-gray-500 flex items-center gap-1">
-                                        {new Date() > new Date(inv.dueDate) && inv.status !== 'PAID' && <Clock size={12} className="text-red-400" />}
-                                        {new Date(inv.dueDate).toLocaleDateString('en-PK')}
+                                <tr><td colSpan={5} className="py-20 text-center"><Loader2 className="w-10 h-10 animate-spin mx-auto text-blue-200" /></td></tr>
+                            ) : filteredInvoices.length === 0 ? (
+                                <tr><td colSpan={5} className="py-20 text-center text-slate-400 font-medium italic">No active records found for this view.</td></tr>
+                            ) : filteredInvoices.map((inv, i) => (
+                                <motion.tr 
+                                    key={inv._id}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    transition={{ delay: i * 0.03 }}
+                                    className="hover:bg-slate-50/80 transition-colors group"
+                                >
+                                    <td className="px-6 py-5">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-black text-xs">
+                                                {inv.studentName.charAt(0)}
+                                            </div>
+                                            <div>
+                                                <p className="font-black text-slate-900 leading-none mb-1">{inv.studentName}</p>
+                                                <p className="text-xs font-mono text-slate-400">{inv.rollNumber} • {inv.program}</p>
+                                            </div>
+                                        </div>
                                     </td>
-                                    <td className="px-4 py-3 text-center">
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColors[inv.status]}`}>{inv.status}</span>
+                                    <td className="px-6 py-5 text-right font-black text-slate-700">
+                                        {activeTab === 'STANDARD' ? (
+                                            <span>Rs {inv.totalAmount.toLocaleString()}</span>
+                                        ) : (
+                                            <span className="text-blue-600">Rs {(inv.outstandingAmount / 2).toLocaleString()}*</span> 
+                                        )}
                                     </td>
-                                    <td className="px-4 py-3 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            {inv.status !== 'PAID' && inv.status !== 'CANCELLED' && (
-                                                <RoleGuard>
-                                                    <button onClick={() => { setShowPayModal(inv); setPayForm(prev => ({ ...prev, amount: inv.outstandingAmount, paymentMode: 'CASH', paymentDate: new Date().toISOString().split('T')[0] })); setConfirmOverpayment(false); }}
-                                                        className="inline-flex text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg hover:bg-green-100 transition-colors items-center gap-1">
-                                                        <IndianRupee size={11} /> Pay
-                                                    </button>
-                                                </RoleGuard>
+                                    <td className="px-6 py-5 text-right">
+                                        <span className={`font-black ${inv.outstandingAmount > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                            Rs {inv.outstandingAmount.toLocaleString()}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-5">
+                                        {activeTab === 'STANDARD' ? (
+                                            <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter ${statusColors[inv.status]}`}>
+                                                {inv.status}
+                                            </span>
+                                        ) : (
+                                            <div className="flex items-center gap-2 text-slate-500 text-xs font-bold">
+                                                <Calendar className="w-3.5 h-3.5" />
+                                                {new Date(inv.dueDate).toLocaleDateString()}
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-5">
+                                        <div className="flex justify-end items-center gap-2">
+                                            {inv.status !== 'PAID' && (
+                                                <button 
+                                                    onClick={() => handleQuickVerify(inv, activeTab === 'STANDARD' ? inv.outstandingAmount : inv.outstandingAmount / 2)}
+                                                    disabled={!!saving}
+                                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 shadow-lg ${
+                                                        activeTab === 'STANDARD'
+                                                        ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-100'
+                                                        : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-100'
+                                                    } disabled:opacity-50`}
+                                                >
+                                                    {saving === inv._id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                                                    {activeTab === 'STANDARD' ? 'Verify Full Payment' : 'Verify Installment'}
+                                                </button>
                                             )}
-                                            {inv.status === 'PENDING' && (
-                                                <RoleGuard>
-                                                    <button onClick={() => setShowOverrideModal(inv)}
-                                                        className="inline-flex text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg hover:bg-indigo-100 transition-colors items-center gap-1">
-                                                        <Settings size={11} /> Customize
-                                                    </button>
-                                                </RoleGuard>
-                                            )}
-                                            {(inv.status === 'PENDING' || inv.status === 'PARTIAL') && (
-                                                <RoleGuard>
-                                                    <button onClick={() => setShowInstallmentWizard(inv)}
-                                                        className="inline-flex text-xs bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-colors items-center gap-1">
-                                                        <LayoutList size={11} /> Split
-                                                    </button>
-                                                </RoleGuard>
-                                            )}
+
+                                            <div className="relative">
+                                                <button 
+                                                    onClick={() => setSelectedActionRow(selectedActionRow === inv._id ? null : inv._id)}
+                                                    className="p-2 hover:bg-slate-200 rounded-lg transition-colors text-slate-400"
+                                                >
+                                                    <MoreVertical className="w-4 h-4" />
+                                                </button>
+                                                
+                                                {selectedActionRow === inv._id && (
+                                                    <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-100 rounded-xl shadow-2xl z-20 py-2 animate-in fade-in slide-in-from-top-2">
+                                                        <button 
+                                                            onClick={() => { setShowOverrideModal(inv); setSelectedActionRow(null); }}
+                                                            className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"
+                                                        >
+                                                            <Settings className="w-3.5 h-3.5" /> Customize Fee
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => { setShowInstallmentWizard(inv); setSelectedActionRow(null); }}
+                                                            className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"
+                                                        >
+                                                            <LayoutList className="w-3.5 h-3.5" /> Split into Plan
+                                                        </button>
+                                                        <div className="h-px bg-slate-100 my-1"></div>
+                                                        <button className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2">
+                                                            <X className="w-3.5 h-3.5" /> Void Invoice
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </td>
                                 </motion.tr>
@@ -255,175 +342,26 @@ function FeeInvoicesClientContent() {
                         </tbody>
                     </table>
                 </div>
+                
+                {/* Pagination Placeholder */}
+                <div className="px-8 py-5 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                        Showing Page {page} of {totalPages}
+                    </p>
+                    <div className="flex gap-2">
+                        <Pagination currentPage={page} totalPages={totalPages} totalCount={totalCount} />
+                    </div>
+                </div>
             </div>
-            <Pagination currentPage={page} totalPages={totalPages} totalCount={totalCount} />
 
-            {/* Create Invoice Modal */}
-            {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-                    <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="font-bold text-leads-blue">New Fee Invoice</h2>
-                            <button onClick={() => setShowModal(false)}><X size={18} className="text-gray-400" /></button>
-                        </div>
-                        <form onSubmit={handleCreate} className="space-y-4">
-                            <div className="relative">
-                                <label className="text-xs font-semibold text-gray-600 mb-1 block">Search Student *</label>
-                                <input
-                                    type="text"
-                                    placeholder="Search by name or registration number..."
-                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-leads-blue"
-                                    value={form.studentName}
-                                    onChange={async (e) => {
-                                        const query = e.target.value;
-                                        setForm({ ...form, studentName: query, studentId: '' }); // Reset studentId on typing
-                                        if (query.length > 2) {
-                                            try {
-                                                const res = await fetch(`/api/finance/university/students?search=${encodeURIComponent(query)}`);
-                                                if (res.ok) {
-                                                    const data = await res.json();
-                                                    // Quick hack to show options: attaching fetched data to a temporary state variable
-                                                    // Better to create a dedicated SearchableCombobox component, but this works inline
-                                                    (window as any).__studentSearchResults = data;
-                                                    // Trigger re-render to show options (handled below conceptually)
-                                                }
-                                            } catch (err) { }
-                                        } else {
-                                            (window as any).__studentSearchResults = [];
-                                        }
-                                    }}
-                                />
-                                {(window as any).__studentSearchResults?.length > 0 && !form.studentId && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                                        {(window as any).__studentSearchResults.map((s: any) => (
-                                            <div
-                                                key={s._id}
-                                                className="px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-0"
-                                                onClick={() => {
-                                                    setForm({ ...form, studentId: s._id, studentName: s.name, rollNumber: s.registrationNumber || '' });
-                                                    (window as any).__studentSearchResults = [];
-                                                }}
-                                            >
-                                                <div className="font-medium text-gray-900">{s.name}</div>
-                                                <div className="text-xs text-gray-500 font-mono">{s.registrationNumber}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {form.studentId && (
-                                <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3 text-sm">
-                                    <p className="text-xs text-gray-500 mb-0.5">Selected Student</p>
-                                    <p className="font-semibold text-gray-900">{form.studentName}</p>
-                                    <p className="text-xs text-leads-blue font-mono mt-0.5">{form.rollNumber}</p>
-                                    <button type="button" onClick={() => setForm({ ...form, studentId: '', studentName: '', rollNumber: '' })} className="text-xs text-red-500 hover:text-red-700 mt-2 font-medium">Clear Selection</button>
-                                </div>
-                            )}
-
-                            <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Fee Structure *</label>
-                                <select required value={form.feeStructureId} onChange={e => setForm({ ...form, feeStructureId: e.target.value })}
-                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-leads-blue">
-                                    <option value="">-- Select Fee Structure --</option>
-                                    {structures.map(s => <option key={s._id} value={s._id}>{s.programName} · {s.semester} · PKR {s.totalAmount.toLocaleString()}</option>)}
-                                </select></div>
-                            <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Due Date</label>
-                                <input required type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })}
-                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-leads-blue" /></div>
-                            {error && <p className="text-red-600 text-xs bg-red-50 rounded px-3 py-2">{error}</p>}
-                            <div className="flex gap-3">
-                                <button type="button" onClick={() => setShowModal(false)} className="flex-1 border border-gray-200 rounded-lg py-2 text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
-                                <button type="submit" disabled={saving} className="flex-1 bg-leads-blue text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-800 flex items-center justify-center gap-2">
-                                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Create
-                                </button>
-                            </div>
-                        </form>
-                    </motion.div>
-                </div>
-            )}
-
-            {/* Payment Modal */}
-            {showPayModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-                    <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="font-bold text-leads-blue">Record Payment</h2>
-                            <button onClick={() => setShowPayModal(null)}><X size={18} className="text-gray-400" /></button>
-                        </div>
-                        <p className="text-xs text-gray-500 mb-4">Invoice: <strong className="font-mono">{showPayModal.invoiceNumber}</strong> · {showPayModal.studentName}</p>
-
-                        <form onSubmit={handlePayment} className="space-y-4">
-                            <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Amount (PKR)</label>
-                                <input required type="number" step="0.01" min="1" value={payForm.amount || ''} onChange={e => setPayForm({ ...payForm, amount: parseFloat(e.target.value) || 0 })}
-                                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 ${isOverpaying ? 'border-amber-300 focus:ring-amber-500 bg-amber-50' : 'border-gray-200 focus:ring-leads-blue'}`} />
-                            </div>
-
-                            {/* OVERPAYMENT WARNING UI */}
-                            {isOverpaying && (
-                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                    <div className="flex gap-2 items-start text-amber-800">
-                                        <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
-                                        <div className="text-xs">
-                                            <p className="font-bold mb-1">Overpayment Detected</p>
-                                            <p>The entered amount exceeds the outstanding balance by <strong>PKR {overpaymentAmount.toLocaleString()}</strong>.</p>
-                                            <p className="mt-1">The excess amount will be added to the student's <strong>Advance Balance</strong>.</p>
-                                        </div>
-                                    </div>
-                                    <label className="flex items-center gap-2 mt-3 text-xs text-amber-900 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={confirmOverpayment}
-                                            onChange={(e) => setConfirmOverpayment(e.target.checked)}
-                                            className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
-                                        />
-                                        I confirm processing this overpayment.
-                                    </label>
-                                </div>
-                            )}
-
-                            <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Mode</label>
-                                <select value={payForm.paymentMode} onChange={e => setPayForm({ ...payForm, paymentMode: e.target.value })}
-                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-leads-blue">
-                                    {['CASH', 'BANK_TRANSFER', 'CHEQUE', 'ONLINE', 'DD'].map(m => <option key={m}>{m}</option>)}
-                                </select></div>
-
-                            <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Deposit To Wallet *</label>
-                                <select required value={payForm.walletId} onChange={e => setPayForm({ ...payForm, walletId: e.target.value })}
-                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-leads-blue">
-                                    <option value="">-- Select Wallet --</option>
-                                    {wallets.map(w => <option key={w._id} value={w._id}>{w.name} (PKR {(w.currentBalance || 0).toLocaleString()})</option>)}
-                                </select></div>
-
-                            <div><label className="text-xs font-semibold text-gray-600 mb-1 block">Payment Date</label>
-                                <input required type="date" value={payForm.paymentDate} onChange={e => setPayForm({ ...payForm, paymentDate: e.target.value })}
-                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-leads-blue" /></div>
-
-                            {error && <p className="text-red-600 text-xs bg-red-50 rounded px-3 py-2">{error}</p>}
-
-                            {/* JARGON REMOVED: Plain Language applied */}
-                            <p className="text-[10px] text-gray-400">This payment will be applied to the student's balance and tracked automatically.</p>
-
-                            <div className="flex gap-3 pt-2">
-                                <button type="button" onClick={() => setShowPayModal(null)} className="flex-1 border border-gray-200 rounded-lg py-2 text-sm text-gray-600">Cancel</button>
-                                <button type="submit" disabled={!canSubmitPayment} className={`flex-1 text-white rounded-lg py-2 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${canSubmitPayment ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300 cursor-not-allowed'}`}>
-                                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Post Payment
-                                </button>
-                            </div>
-                        </form>
-                    </motion.div>
-                </div>
-            )}
-
-            {/* Fee Override Modal */}
+            {/* Modals & Wizards */}
             {showOverrideModal && (
                 <FeeOverrideModal
                     isOpen={!!showOverrideModal}
                     onClose={() => setShowOverrideModal(null)}
                     invoice={showOverrideModal as any}
                     onSave={async (updatedData) => {
-                        setSaving(true);
+                        setSaving(showOverrideModal._id);
                         try {
                             const res = await fetch(`/api/finance/fee-invoices/${showOverrideModal._id}/override`, {
                                 method: 'PUT',
@@ -431,18 +369,17 @@ function FeeInvoicesClientContent() {
                                 body: JSON.stringify(updatedData),
                             });
                             if (!res.ok) throw new Error('Failed to override fee');
-                            fetchInvoices(statusParam, page);
+                            fetchInvoices();
                             setShowOverrideModal(null);
                         } catch (err: any) {
                             setError(err.message);
                         } finally {
-                            setSaving(false);
+                            setSaving(null);
                         }
                     }}
                 />
             )}
 
-            {/* Installment Wizard */}
             {showInstallmentWizard && (
                 <InstallmentWizard
                     isOpen={!!showInstallmentWizard}
@@ -450,7 +387,7 @@ function FeeInvoicesClientContent() {
                     invoiceTotal={showInstallmentWizard.outstandingAmount}
                     studentId={showInstallmentWizard.rollNumber}
                     onSave={async (installments) => {
-                        setSaving(true);
+                        setSaving(showInstallmentWizard._id);
                         try {
                             const res = await fetch('/api/finance/installment-plans', {
                                 method: 'POST',
@@ -466,23 +403,31 @@ function FeeInvoicesClientContent() {
                                 }),
                             });
                             if (!res.ok) throw new Error('Failed to save installment plan');
-                            fetchInvoices(statusParam, page);
+                            fetchInvoices();
                             setShowInstallmentWizard(null);
                         } catch (err: any) {
                             setError(err.message);
                         } finally {
-                            setSaving(false);
+                            setSaving(null);
                         }
                     }}
                 />
             )}
+
+            {/* Future Placeholder for New Invoice Modal */}
+            {/* {showModal && <NewInvoiceModal ... />} */}
         </div>
     );
 }
 
 export default function FeeInvoicesClient() {
     return (
-        <Suspense fallback={<div className="h-64 w-full bg-gray-50 animate-pulse rounded-xl" />}>
+        <Suspense fallback={
+            <div className="flex flex-col items-center justify-center h-screen bg-slate-50">
+                <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
+                <p className="mt-4 text-slate-500 font-bold animate-pulse">Initializing Fee Ledger...</p>
+            </div>
+        }>
             <FeeInvoicesClientContent />
         </Suspense>
     );
