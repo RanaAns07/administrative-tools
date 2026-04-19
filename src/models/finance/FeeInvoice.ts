@@ -29,16 +29,23 @@ export interface IFeeInvoice extends Document {
     issueDate: Date;
     dueDate: Date;
     totalAmount: number;
+    isCustomFee: boolean;             // New: Support for student-specific overrides
+    customFeeHeads: {                 // New: Breakdown for custom fees
+        name: string;
+        amount: number;
+    }[];
     discountAmount: number;           // From scholarship/manual discount
     discountFromAdvance: number;      // From StudentAdvanceBalance auto-application
-    penaltyAmount: number;
-    amountPaid: number;
+    penaltyAmount: number;            // Total fine imposed
+    penaltyPaid: number;              // New: Tracking penalty payment separately
+    amountPaid: number;               // Total principal amount paid
     status: FeeInvoiceStatus;
     scholarshipId?: Types.ObjectId;
     installmentNumber?: number;
     notes?: string;
     createdAt: Date;
     updatedAt: Date;
+    getArrears(): number;
 }
 
 const FeeInvoiceSchema = new Schema<IFeeInvoice>(
@@ -76,6 +83,16 @@ const FeeInvoiceSchema = new Schema<IFeeInvoice>(
             required: [true, 'Total amount is required.'],
             min: [0, 'Total amount cannot be negative.'],
         },
+        isCustomFee: {
+            type: Boolean,
+            default: false,
+        },
+        customFeeHeads: [
+            {
+                name: { type: String, required: true },
+                amount: { type: Number, required: true, min: 0 },
+            },
+        ],
         discountAmount: {
             type: Number,
             default: 0,
@@ -90,6 +107,11 @@ const FeeInvoiceSchema = new Schema<IFeeInvoice>(
             type: Number,
             default: 0,
             min: [0, 'Penalty cannot be negative.'],
+        },
+        penaltyPaid: {
+            type: Number,
+            default: 0,
+            min: [0, 'Penalty paid cannot be negative.'],
         },
         amountPaid: {
             type: Number,
@@ -128,8 +150,14 @@ const FeeInvoiceSchema = new Schema<IFeeInvoice>(
 
 // Computed property available as a plain getter (no virtual needed for reports)
 FeeInvoiceSchema.methods.getArrears = function (this: IFeeInvoice): number {
-    const payable = this.totalAmount - this.discountAmount - this.discountFromAdvance + this.penaltyAmount;
-    return Math.max(0, payable - this.amountPaid);
+    const baseTotal = this.isCustomFee
+        ? this.customFeeHeads.reduce((sum, head) => sum + head.amount, 0)
+        : this.totalAmount;
+
+    const payable = baseTotal - this.discountAmount - this.discountFromAdvance + this.penaltyAmount;
+    const paid = this.amountPaid + this.penaltyPaid;
+
+    return Math.max(0, payable - paid);
 };
 
 FeeInvoiceSchema.index({ studentProfileId: 1 });

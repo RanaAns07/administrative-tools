@@ -8,6 +8,10 @@ export interface IFeePayment extends Document {
     feeInvoice: Types.ObjectId;
     installment?: Types.ObjectId;
     amount: number;
+    allocation: {               // New: Track where the money went
+        principalAmount: number;
+        penaltyAmount: number;
+    };
     paymentMode: PaymentMode;
     paymentDate: Date;
     chequeNumber?: string;
@@ -36,6 +40,10 @@ const FeePaymentSchema = new Schema<IFeePayment>(
         feeInvoice: { type: Schema.Types.ObjectId, ref: 'FeeInvoice', required: true },
         installment: { type: Schema.Types.ObjectId, ref: 'InstallmentPlan' },
         amount: { type: Number, required: true, min: 0.01 },
+        allocation: {
+            principalAmount: { type: Number, required: true, default: 0, min: 0 },
+            penaltyAmount: { type: Number, required: true, default: 0, min: 0 },
+        },
         paymentMode: {
             type: String,
             enum: ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'ONLINE', 'DD'],

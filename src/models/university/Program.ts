@@ -20,6 +20,8 @@ export interface IProgram extends Document {
     name: string;
     /** Short uppercase code e.g. "BSCS" — used in registration numbers */
     code: string;
+    /** Reference to the Department this program belongs to */
+    departmentId: Types.ObjectId;
     /** Total number of semesters to complete the program */
     totalSemesters: number;
     /** Soft-delete flag — inactive programs cannot accept new batches */
@@ -46,6 +48,11 @@ const ProgramSchema = new Schema<IProgram>(
             trim: true,
             uppercase: true,
             maxlength: [20, 'Program code must not exceed 20 characters.'],
+        },
+        departmentId: {
+            type: Schema.Types.ObjectId,
+            ref: 'Department',
+            required: [true, 'Department reference (departmentId) is required.'],
         },
         totalSemesters: {
             type: Number,
