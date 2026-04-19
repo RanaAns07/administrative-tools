@@ -2,6 +2,7 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
+import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
 import { withErrorHandler } from '@/lib/api-utils';
 
@@ -11,6 +12,7 @@ import FeeStructure from '@/models/finance/FeeStructure';
 import StudentProfile from '@/models/university/StudentProfile';
 import Batch from '@/models/university/Batch';
 import Program from '@/models/university/Program';
+import InstallmentPlan from '@/models/finance/InstallmentPlan';
 
 import Wallet from '@/models/finance/Wallet';
 import { FinanceTransactionService } from '@/lib/finance/FinanceTransactionService';
@@ -26,7 +28,7 @@ export const GET = withErrorHandler(async (req: Request) => {
     
     // Explicitly reference models to prevent tree-shaking in serverless build
     // This ensures Mongoose registers the schemas for .populate()
-    [StudentProfile, Batch, Program].forEach(m => console.log(`DEBUG: Schema registered for ${m.modelName}`));
+    [StudentProfile, Batch, Program, InstallmentPlan].forEach(m => console.log(`DEBUG: Schema registered for ${m.modelName}`));
 
     const { searchParams } = new URL(req.url);
     const studentProfileId = searchParams.get('studentProfileId');
@@ -67,7 +69,7 @@ export const GET = withErrorHandler(async (req: Request) => {
     // Fetch next installment info for partial invoices
     const invoices = await Promise.all(invoicesData.map(async (inv: any) => {
         if (inv.status === 'PARTIAL') {
-            const plan = await mongoose.model('InstallmentPlan').findOne({ 
+            const plan = await InstallmentPlan.findOne({ 
                 feeInvoice: inv._id, 
                 isCompleted: false 
             }).lean();
