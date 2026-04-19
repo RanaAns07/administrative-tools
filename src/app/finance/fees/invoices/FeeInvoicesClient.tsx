@@ -257,11 +257,15 @@ function FeeInvoicesClientContent() {
                                     <td className="px-6 py-5">
                                         <div className="flex items-center gap-4">
                                             <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-black text-xs">
-                                                {inv.studentName.charAt(0)}
+                                                {(inv.studentName || (inv as any).studentProfileId?.name || '?').charAt(0)}
                                             </div>
                                             <div>
-                                                <p className="font-black text-slate-900 leading-none mb-1">{inv.studentName}</p>
-                                                <p className="text-xs font-mono text-slate-400">{inv.rollNumber} • {inv.program}</p>
+                                                <p className="font-black text-slate-900 leading-none mb-1">
+                                                    {inv.studentName || (inv as any).studentProfileId?.name || 'Unknown Student'}
+                                                </p>
+                                                <p className="text-xs font-mono text-slate-400">
+                                                    {inv.rollNumber || (inv as any).studentProfileId?.registrationNumber || 'N/A'} • {inv.program}
+                                                </p>
                                             </div>
                                         </div>
                                     </td>
